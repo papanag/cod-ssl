@@ -7,7 +7,25 @@ name = "cod-ssl"
 version = "0.1.0"
 description = "Controlled frozen DINOv3 vs V-JEPA 2.1 feature comparison for COD"
 requires-python = ">=3.11"
-dependencies = ["torch", "torchvision", "numpy", "pillow", "pyyaml", "pandas", "tqdm", "timm", "einops"]
+dependencies = [
+  "torch",
+  "torchvision",
+  "numpy",
+  "pillow",
+  "pyyaml",
+  "pandas",
+  "tqdm",
+  "timm",
+  "einops",
+  # Imported by the official DINOv3 hub module, including its eval entry points.
+  "ftfy",
+  "omegaconf",
+  "regex",
+  "scikit-learn",
+  "submitit",
+  "termcolor",
+  "torchmetrics",
+]
 
 [project.optional-dependencies]
 dev = ["pytest"]
