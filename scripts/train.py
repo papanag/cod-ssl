@@ -5,11 +5,13 @@ import argparse
 from pathlib import Path
 
 import torch
+from PIL import Image
 from torch.utils.data import DataLoader, Subset
 
 from cod_ssl.backbones import build_backbone
 from cod_ssl.data import CODDataset
 from cod_ssl.engine import Trainer, TrainingOptions
+from cod_ssl.engine.evaluate import logits_to_prediction
 from cod_ssl.losses import BCESoftIoULoss
 from cod_ssl.models import FrozenCODModel
 from cod_ssl.utils.config import load_config
@@ -81,6 +83,18 @@ def main() -> None:
     print(f"Run directory: {run_dir}")
     print(f"AMP: enabled={trainer.amp_enabled}, dtype={trainer.amp_dtype}")
     trainer.fit()
+    sample = dataset[0]
+    model.eval()
+    sample_image = sample["image"].unsqueeze(0).to(trainer.device)
+    with torch.inference_mode(), torch.autocast(
+        device_type=trainer.device.type,
+        dtype=trainer.amp_dtype,
+        enabled=trainer.amp_enabled,
+    ):
+        sample_logits = model(sample_image)
+    sample_prediction = logits_to_prediction(sample_logits, (384, 384))
+    Image.fromarray(sample_prediction).save(run_dir / "samples" / "training_sample.png")
+    model.assert_backbone_frozen()
     print("Training complete; backbone freeze invariant passed.")
 
 

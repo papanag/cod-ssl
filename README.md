@@ -83,3 +83,8 @@ The evaluator resizes 384×384 logits to each original GT size, applies sigmoid 
 per-image min–max normalization, saves the exact uint8 PNG consumed by
 `pysodmetrics`, and writes `metrics.json`/`metrics.csv`. Test manifests are never
 used by the training CLI.
+
+For the controlled GPU smoke gate, run `notebooks/02_frozen_baseline_smoke_train.ipynb`
+after notebook 00. It generates the training manifest from explicit Drive paths,
+trains each backbone on 32 images for two epochs, exports a sample prediction, and
+reloads each checkpoint to verify finite logits and the backbone freeze invariant.
