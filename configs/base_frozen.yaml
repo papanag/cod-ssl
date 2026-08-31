@@ -1,0 +1,10 @@
+experiment:
+  seed: 42
+  input_size: 384
+model:
+  backbone:
+    name: PLACEHOLDER
+    layers: [2, 5, 8, 11]
+data:
+  train_manifest: manifests/train_all.csv
+

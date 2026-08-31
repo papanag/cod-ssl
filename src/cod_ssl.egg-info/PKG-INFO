@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: cod-ssl
+Version: 0.1.0
+Summary: Controlled frozen DINOv3 vs V-JEPA 2.1 feature comparison for COD
+Requires-Python: >=3.11
+Requires-Dist: torch
+Requires-Dist: torchvision
+Requires-Dist: numpy
+Requires-Dist: pillow
+Requires-Dist: pyyaml
+Requires-Dist: pandas
+Requires-Dist: tqdm
+Requires-Dist: timm
+Requires-Dist: einops
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Provides-Extra: notebooks
+Requires-Dist: matplotlib; extra == "notebooks"

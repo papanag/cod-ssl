@@ -1,0 +1,5 @@
+base: base_frozen.yaml
+model:
+  backbone:
+    name: dinov3_vitb16
+

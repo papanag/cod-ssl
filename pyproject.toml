@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cod-ssl"
+version = "0.1.0"
+description = "Controlled frozen DINOv3 vs V-JEPA 2.1 feature comparison for COD"
+requires-python = ">=3.11"
+dependencies = ["torch", "torchvision", "numpy", "pillow", "pyyaml", "pandas", "tqdm", "timm", "einops"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+notebooks = ["matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires official repositories and checkpoints"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,5 @@
+base: base_frozen.yaml
+model:
+  backbone:
+    name: vjepa21_vitb16
+

@@ -1,0 +1,61 @@
+# Frozen DINOv3 vs V-JEPA 2.1 for COD
+
+This initial implementation covers Milestones A–D: project/data foundations and a
+shared frozen-backbone interface. It intentionally does not include the decoder or
+training/evaluation pipeline yet.
+
+## Setup
+
+Use Python 3.11, clone the official `facebookresearch/dinov3` and
+`facebookresearch/vjepa2` repositories outside this repository, acquire checkpoints
+through their official procedures, copy `.env.example` values into your environment,
+then install and test:
+
+```bash
+python -m pip install -e '.[dev]'
+pytest
+python scripts/runtime_check.py
+python scripts/inspect_backbone.py --backbone dinov3_vitb16 --image /path/to/cod.jpg
+python scripts/inspect_backbone.py --backbone vjepa21_vitb16 --image /path/to/cod.jpg
+```
+
+Both commands enforce four `[B,768,24,24]` frozen feature maps from layers
+`[2,5,8,11]`. DINOv3 uses normalized reshaped patch tokens. V-JEPA 2.1 loads only
+the checkpoint's `ema_encoder` state and sends `[B,C,1,H,W]` through its native
+`img_temporal_dim_size=1` image pathway; it does not repeat images and never uses
+the predictor. Unexpected token layouts fail rather than being guessed.
+
+The smoke report includes upstream commit/checkpoint hashes, parameter counts,
+runtime, dtype, feature shapes, peak CUDA memory, and mean forward time.
+
+## Data
+
+Manifests contain `id,source,image_path,mask_path`. Generate individual manifests
+with `scripts/prepare_manifests.py`, then validate the locked protocol with:
+
+```bash
+python scripts/validate_dataset.py --manifest-dir manifests
+```
+
+Create the deterministic, source-stratified 90/10 development split only from the
+validated training manifest with `python scripts/prepare_manifests.py
+--split-train manifests/train_all.csv`.
+
+The validator enforces all five dataset counts, opens every pair, checks dimensions,
+rejects duplicate paths, and by default hashes images to detect train/test overlap.
+
+## Colab workflow
+
+The local Git repository remains the source of truth: edit/commit/push locally,
+then pull and reinstall in Colab. A minimal bootstrap is:
+
+```bash
+git clone YOUR_REPOSITORY_URL /content/cod-ssl
+git clone https://github.com/facebookresearch/dinov3 /content/third_party/dinov3
+git clone https://github.com/facebookresearch/vjepa2 /content/third_party/vjepa2
+pip install -e '/content/cod-ssl[dev]'
+```
+
+Mount Drive if desired, export the four paths from `.env.example`, and run the two
+inspection commands above. Credentials, access URLs, datasets, weights, and runs
+must remain outside Git.

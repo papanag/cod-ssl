@@ -1,0 +1,15 @@
+torch
+torchvision
+numpy
+pillow
+pyyaml
+pandas
+tqdm
+timm
+einops
+
+[dev]
+pytest
+
+[notebooks]
+matplotlib
