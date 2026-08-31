@@ -15,6 +15,7 @@ submitit
 termcolor
 torchmetrics
 tensorboard
+pysodmetrics
 
 [dev]
 pytest

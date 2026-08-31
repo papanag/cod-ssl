@@ -72,3 +72,14 @@ python scripts/train.py --config configs/frozen_vjepa21_vitb16.yaml --limit-trai
 The optimizer contains decoder parameters only. Runs record resolved configuration,
 environment/upstream versions, CSV and TensorBoard logs, and resumable decoder-only
 checkpoints. Use `--resume runs/.../checkpoints/last.pt --run-dir runs/...` to resume.
+
+Evaluate a completed run on all four locked test sets with:
+
+```bash
+python scripts/evaluate.py --run runs/<run-directory>
+```
+
+The evaluator resizes 384×384 logits to each original GT size, applies sigmoid and
+per-image min–max normalization, saves the exact uint8 PNG consumed by
+`pysodmetrics`, and writes `metrics.json`/`metrics.csv`. Test manifests are never
+used by the training CLI.

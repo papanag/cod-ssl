@@ -26,3 +26,13 @@ training:
   amp_dtype: auto
   grad_clip_norm: 1.0
   checkpoint_every: 1
+evaluation:
+  manifests:
+    camo_test: manifests/camo_test.csv
+    cod10k_test: manifests/cod10k_test.csv
+    chameleon: manifests/chameleon.csv
+    nc4k: manifests/nc4k.csv
+  batch_size: 1
+  num_workers: 2
+  minmax_normalize: true
+  save_predictions: true

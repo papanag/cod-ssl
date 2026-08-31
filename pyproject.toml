@@ -26,6 +26,7 @@ dependencies = [
   "termcolor",
   "torchmetrics",
   "tensorboard",
+  "pysodmetrics",
 ]
 
 [project.optional-dependencies]

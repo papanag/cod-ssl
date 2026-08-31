@@ -20,6 +20,7 @@ Requires-Dist: submitit
 Requires-Dist: termcolor
 Requires-Dist: torchmetrics
 Requires-Dist: tensorboard
+Requires-Dist: pysodmetrics
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Provides-Extra: notebooks
