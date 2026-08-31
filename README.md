@@ -85,8 +85,15 @@ per-image min–max normalization, saves the exact uint8 PNG consumed by
 `pysodmetrics`, and writes `metrics.json`/`metrics.csv`. Test manifests are never
 used by the training CLI.
 
-For the controlled GPU smoke gate, run `notebooks/02_frozen_baseline_smoke_train.ipynb`
-after notebook 00. The bootstrap downloads the official combined training archive,
+Every Colab notebook is independently runnable from a fresh GPU kernel. Its first
+cell mounts Drive, clones or fast-forwards the project, installs it, and invokes the
+shared idempotent `scripts/bootstrap_colab.py`. That script reuses cached Drive
+weights/data, prepares missing prerequisites, restores environment paths, and asks
+for the private DINOv3 URL only when its checkpoint is absent. There is no required
+notebook execution order.
+
+For the controlled GPU smoke gate, run `notebooks/02_frozen_baseline_smoke_train.ipynb`.
+The shared bootstrap downloads the official combined training archive,
 caches/extracts it in Drive, discovers an unambiguous 4,040-pair layout, and builds
 the manifest after the user explicitly acknowledges the COD10K non-commercial
 license. Notebook 02 trains each backbone on 256 images for five epochs, exports a
@@ -98,7 +105,7 @@ and win rates), CSV/Markdown/LaTeX tables, diagnostic plots, and six score-selec
 qualitative panels. These artifacts are explicitly training-subset diagnostics, not
 held-out publication evidence.
 
-After both intermediate smoke runs pass, run
+After both intermediate smoke runs pass, independently run
 `notebooks/03_full_frozen_comparison.ipynb`. It downloads/caches the four test sets,
 validates the locked counts and train/test isolation, runs the two full 40-epoch
 experiments, evaluates each dataset separately, and writes its results under Drive.
