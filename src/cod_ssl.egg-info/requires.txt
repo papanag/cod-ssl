@@ -18,6 +18,7 @@ tensorboard
 pysodmetrics
 gdown
 matplotlib
+scipy
 
 [dev]
 pytest

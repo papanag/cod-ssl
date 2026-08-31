@@ -29,6 +29,7 @@ dependencies = [
   "pysodmetrics",
   "gdown",
   "matplotlib",
+  "scipy",
 ]
 
 [project.optional-dependencies]

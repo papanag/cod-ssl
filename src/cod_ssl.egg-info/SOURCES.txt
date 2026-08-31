@@ -43,5 +43,6 @@ tests/test_evaluate.py
 tests/test_loss.py
 tests/test_manifests.py
 tests/test_metrics.py
+tests/test_smoke_diagnostics.py
 tests/test_training.py
 tests/test_verify_checkpoint.py

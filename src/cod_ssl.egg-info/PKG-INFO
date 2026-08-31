@@ -23,6 +23,7 @@ Requires-Dist: tensorboard
 Requires-Dist: pysodmetrics
 Requires-Dist: gdown
 Requires-Dist: matplotlib
+Requires-Dist: scipy
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Provides-Extra: notebooks

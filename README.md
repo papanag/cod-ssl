@@ -91,6 +91,12 @@ caches/extracts it in Drive, discovers an unambiguous 4,040-pair layout, and bui
 the manifest after the user explicitly acknowledges the COD10K non-commercial
 license. Notebook 02 trains each backbone on 256 images for five epochs, exports a
 sample prediction, and reloads each checkpoint to verify finite logits and freezing.
+Its final cells also evaluate both checkpoints on all 256 smoke-training images,
+export per-image Dice/IoU/MAE/uncertainty values, aggregate COD metrics, descriptive
+and paired statistics (bootstrap confidence intervals, Wilcoxon tests, effect sizes,
+and win rates), CSV/Markdown/LaTeX tables, diagnostic plots, and six score-selected
+qualitative panels. These artifacts are explicitly training-subset diagnostics, not
+held-out publication evidence.
 
 After both intermediate smoke runs pass, run
 `notebooks/03_full_frozen_comparison.ipynb`. It downloads/caches the four test sets,
