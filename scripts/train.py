@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import torch
@@ -95,6 +96,8 @@ def main() -> None:
     sample_prediction = logits_to_prediction(sample_logits, (384, 384))
     Image.fromarray(sample_prediction).save(run_dir / "samples" / "training_sample.png")
     model.assert_backbone_frozen()
+    if hasattr(os, "sync"):
+        os.sync()
     print("Training complete; backbone freeze invariant passed.")
 
 
