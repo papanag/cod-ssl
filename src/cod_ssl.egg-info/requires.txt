@@ -7,6 +7,14 @@ pandas
 tqdm
 timm
 einops
+ftfy
+omegaconf
+regex
+scikit-learn
+submitit
+termcolor
+torchmetrics
+tensorboard
 
 [dev]
 pytest

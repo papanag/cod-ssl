@@ -1,8 +1,7 @@
 # Frozen DINOv3 vs V-JEPA 2.1 for COD
 
-This initial implementation covers Milestones A–D: project/data foundations and a
-shared frozen-backbone interface. It intentionally does not include the decoder or
-training/evaluation pipeline yet.
+The project currently covers Milestones A–F: project/data foundations, frozen
+backbone adapters, the common decoder/loss, and the reproducible training engine.
 
 ## Setup
 
@@ -59,3 +58,17 @@ pip install -e '/content/cod-ssl[dev]'
 Mount Drive if desired, export the four paths from `.env.example`, and run the two
 inspection commands above. Credentials, access URLs, datasets, weights, and runs
 must remain outside Git.
+
+## Training
+
+After preparing and validating `manifests/train_all.csv`, run the required small
+smoke experiment before a full run:
+
+```bash
+python scripts/train.py --config configs/frozen_dinov3_vitb16.yaml --limit-train 32 --epochs 2
+python scripts/train.py --config configs/frozen_vjepa21_vitb16.yaml --limit-train 32 --epochs 2
+```
+
+The optimizer contains decoder parameters only. Runs record resolved configuration,
+environment/upstream versions, CSV and TensorBoard logs, and resumable decoder-only
+checkpoints. Use `--resume runs/.../checkpoints/last.pt --run-dir runs/...` to resume.

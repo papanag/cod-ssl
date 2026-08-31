@@ -25,6 +25,7 @@ dependencies = [
   "submitit",
   "termcolor",
   "torchmetrics",
+  "tensorboard",
 ]
 
 [project.optional-dependencies]

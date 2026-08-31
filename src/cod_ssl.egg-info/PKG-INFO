@@ -12,6 +12,14 @@ Requires-Dist: pandas
 Requires-Dist: tqdm
 Requires-Dist: timm
 Requires-Dist: einops
+Requires-Dist: ftfy
+Requires-Dist: omegaconf
+Requires-Dist: regex
+Requires-Dist: scikit-learn
+Requires-Dist: submitit
+Requires-Dist: termcolor
+Requires-Dist: torchmetrics
+Requires-Dist: tensorboard
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Provides-Extra: notebooks
