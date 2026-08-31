@@ -5,6 +5,11 @@ model:
   backbone:
     name: PLACEHOLDER
     layers: [2, 5, 8, 11]
+  decoder:
+    name: common_cod_decoder
+    projection_dim: 128
+loss:
+  name: bce_soft_iou
+  smooth: 1.0
 data:
   train_manifest: manifests/train_all.csv
-
