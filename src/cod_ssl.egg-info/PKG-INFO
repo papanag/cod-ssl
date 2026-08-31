@@ -22,7 +22,7 @@ Requires-Dist: torchmetrics
 Requires-Dist: tensorboard
 Requires-Dist: pysodmetrics
 Requires-Dist: gdown
+Requires-Dist: matplotlib
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Provides-Extra: notebooks
-Requires-Dist: matplotlib; extra == "notebooks"

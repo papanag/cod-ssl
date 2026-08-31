@@ -1,7 +1,8 @@
 # Frozen DINOv3 vs V-JEPA 2.1 for COD
 
-The project currently covers Milestones A–F: project/data foundations, frozen
-backbone adapters, the common decoder/loss, and the reproducible training engine.
+The project covers Milestones A–I: project/data foundations, frozen backbone
+adapters, the common decoder/loss, reproducible training and evaluation, Colab
+workflows, and the full frozen-backbone comparison with qualitative overlays.
 
 ## Setup
 
@@ -52,7 +53,7 @@ then pull and reinstall in Colab. A minimal bootstrap is:
 git clone YOUR_REPOSITORY_URL /content/cod-ssl
 git clone https://github.com/facebookresearch/dinov3 /content/third_party/dinov3
 git clone https://github.com/facebookresearch/vjepa2 /content/third_party/vjepa2
-pip install -e '/content/cod-ssl[dev]'
+pip install -e '/content/cod-ssl[dev,notebooks]'
 ```
 
 Mount Drive if desired, export the four paths from `.env.example`, and run the two
@@ -88,5 +89,14 @@ For the controlled GPU smoke gate, run `notebooks/02_frozen_baseline_smoke_train
 after notebook 00. The bootstrap downloads the official combined training archive,
 caches/extracts it in Drive, discovers an unambiguous 4,040-pair layout, and builds
 the manifest after the user explicitly acknowledges the COD10K non-commercial
-license. Notebook 02 trains each backbone on 32 images for two epochs, exports a
+license. Notebook 02 trains each backbone on 256 images for five epochs, exports a
 sample prediction, and reloads each checkpoint to verify finite logits and freezing.
+
+After both intermediate smoke runs pass, run
+`notebooks/03_full_frozen_comparison.ipynb`. It downloads/caches the four test sets,
+validates the locked counts and train/test isolation, runs the two full 40-epoch
+experiments, evaluates each dataset separately, and writes its results under Drive.
+Stable run names and epoch checkpoints allow a disconnected Colab session to resume.
+The comparison directory contains metric and compute CSVs, training/metric graphs,
+and 24 paired panels showing the original, ground-truth boundary, probability masks,
+and red prediction overlays for both backbones.

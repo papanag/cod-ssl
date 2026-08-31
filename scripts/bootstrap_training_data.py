@@ -2,39 +2,17 @@
 from __future__ import annotations
 
 import argparse
-import tarfile
-import zipfile
 from pathlib import Path
 
 import gdown
 
-from cod_ssl.data.bootstrap import build_standard_train_manifest, discover_standard_training_pair
+from cod_ssl.data.bootstrap import (
+    build_standard_train_manifest,
+    discover_standard_training_pair,
+    extract_archive,
+)
 
 OFFICIAL_TRAIN_FILE_ID = "1D9bf1KeeCJsxxri6d2qAC7z6O1X_fxpt"
-
-
-def _safe_destination(root: Path, member_name: str) -> Path:
-    destination = (root / member_name).resolve()
-    if root.resolve() not in destination.parents and destination != root.resolve():
-        raise ValueError(f"archive contains unsafe path: {member_name}")
-    return destination
-
-
-def extract_archive(archive: Path, destination: Path) -> None:
-    destination.mkdir(parents=True, exist_ok=True)
-    if zipfile.is_zipfile(archive):
-        with zipfile.ZipFile(archive) as handle:
-            for member in handle.infolist():
-                _safe_destination(destination, member.filename)
-            handle.extractall(destination)
-        return
-    if tarfile.is_tarfile(archive):
-        with tarfile.open(archive) as handle:
-            for member in handle.getmembers():
-                _safe_destination(destination, member.name)
-            handle.extractall(destination, filter="data")
-        return
-    raise ValueError(f"unsupported training archive: {archive}")
 
 
 def main() -> None:

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import os
 from pathlib import Path
 
@@ -40,6 +42,8 @@ def main() -> None:
     if config["training"]["scheduler"] != "cosine":
         raise ValueError("Phase-1 training requires scheduler: cosine")
     run_dir = Path(args.run_dir) if args.run_dir else create_run_dir(args.runs_root, backbone_name)
+    for child in ("checkpoints", "tensorboard", "predictions", "samples"):
+        (run_dir / child).mkdir(parents=True, exist_ok=True)
     dataset = CODDataset(config["data"]["train_manifest"], training=True)
     if args.limit_train is not None:
         if args.limit_train < 1:
@@ -83,6 +87,8 @@ def main() -> None:
         trainer.resume(args.resume)
     print(f"Run directory: {run_dir}")
     print(f"AMP: enabled={trainer.amp_enabled}, dtype={trainer.amp_dtype}")
+    if trainer.device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(trainer.device)
     trainer.fit()
     sample = dataset[0]
     model.eval()
@@ -96,6 +102,19 @@ def main() -> None:
     sample_prediction = logits_to_prediction(sample_logits, (384, 384))
     Image.fromarray(sample_prediction).save(run_dir / "samples" / "training_sample.png")
     model.assert_backbone_frozen()
+    with (run_dir / "training_log.csv").open(newline="") as handle:
+        total_training_seconds = sum(float(row["wall_time_seconds"]) for row in csv.DictReader(handle))
+    summary = {
+        "overall_parameters": sum(parameter.numel() for parameter in model.parameters()),
+        "backbone_parameters": sum(parameter.numel() for parameter in model.backbone.parameters()),
+        "decoder_parameters": sum(parameter.numel() for parameter in model.decoder.parameters()),
+        "trainable_parameters": sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad),
+        "training_wall_time_seconds": total_training_seconds,
+        "peak_cuda_memory_bytes": (
+            torch.cuda.max_memory_allocated(trainer.device) if trainer.device.type == "cuda" else 0
+        ),
+    }
+    (run_dir / "run_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     if hasattr(os, "sync"):
         os.sync()
     print("Training complete; backbone freeze invariant passed.")

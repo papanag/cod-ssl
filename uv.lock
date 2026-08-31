@@ -236,6 +236,7 @@ dependencies = [
     { name = "einops" },
     { name = "ftfy" },
     { name = "gdown" },
+    { name = "matplotlib" },
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "pandas" },
@@ -258,16 +259,13 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
-notebooks = [
-    { name = "matplotlib" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "einops" },
     { name = "ftfy" },
     { name = "gdown" },
-    { name = "matplotlib", marker = "extra == 'notebooks'" },
+    { name = "matplotlib" },
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "pandas" },

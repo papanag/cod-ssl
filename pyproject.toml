@@ -28,11 +28,12 @@ dependencies = [
   "tensorboard",
   "pysodmetrics",
   "gdown",
+  "matplotlib",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
-notebooks = ["matplotlib"]
+notebooks = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
