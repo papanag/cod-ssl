@@ -16,6 +16,7 @@ termcolor
 torchmetrics
 tensorboard
 pysodmetrics
+gdown
 
 [dev]
 pytest

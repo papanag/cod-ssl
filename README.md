@@ -85,6 +85,8 @@ per-image min–max normalization, saves the exact uint8 PNG consumed by
 used by the training CLI.
 
 For the controlled GPU smoke gate, run `notebooks/02_frozen_baseline_smoke_train.ipynb`
-after notebook 00. It generates the training manifest from explicit Drive paths,
-trains each backbone on 32 images for two epochs, exports a sample prediction, and
-reloads each checkpoint to verify finite logits and the backbone freeze invariant.
+after notebook 00. The bootstrap downloads the official combined training archive,
+caches/extracts it in Drive, discovers an unambiguous 4,040-pair layout, and builds
+the manifest after the user explicitly acknowledges the COD10K non-commercial
+license. Notebook 02 trains each backbone on 32 images for two epochs, exports a
+sample prediction, and reloads each checkpoint to verify finite logits and freezing.

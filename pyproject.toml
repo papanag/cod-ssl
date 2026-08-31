@@ -27,6 +27,7 @@ dependencies = [
   "torchmetrics",
   "tensorboard",
   "pysodmetrics",
+  "gdown",
 ]
 
 [project.optional-dependencies]
