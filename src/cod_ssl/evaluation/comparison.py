@@ -118,13 +118,15 @@ def save_qualitative_panel(
         (Image.fromarray(vjepa_prediction), f"{names[1]} probability"),
         (_overlay(image, vjepa_prediction), f"{names[1]} overlay"),
     ]
-    figure, axes = plt.subplots(2, 3, figsize=(14, 8), constrained_layout=True)
+    figure, axes = plt.subplots(3, 2, figsize=(9, 10), constrained_layout=True)
     for axis, (panel, title) in zip(axes.flat, panels):
         axis.imshow(panel, cmap="gray" if panel.mode == "L" else None, vmin=0, vmax=255)
-        axis.set_title(title); axis.axis("off")
+        axis.set_title(title, fontsize=10, pad=3)
+        axis.axis("off")
     figure.suptitle(
         f"{row.dataset}/{row.id} — Dice: {names[0]}={row.dino_dice:.3f}, "
-        f"{names[1]}={row.vjepa_dice:.3f}"
+        f"{names[1]}={row.vjepa_dice:.3f}",
+        fontsize=12,
     )
     figure.savefig(output, dpi=140)
     plt.close(figure)
