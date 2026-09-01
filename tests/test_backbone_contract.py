@@ -2,6 +2,7 @@ import torch
 import pytest
 from torch import nn
 from cod_ssl.backbones.base import FrozenBackbone
+from cod_ssl.backbones.vjepa21 import VJEPA21ViTB16
 
 
 class MockBackbone(FrozenBackbone):
@@ -33,3 +34,8 @@ def test_all_twelve_layers_are_a_valid_extraction_contract():
     model = MockBackbone()
     model.configure_layers(range(12))
     assert model.layer_indices == tuple(range(12))
+
+
+def test_vjepa_rejects_non_official_intermediate_outputs():
+    with pytest.raises(ValueError, match="official hierarchical layers"):
+        VJEPA21ViTB16(layers=list(range(12)))

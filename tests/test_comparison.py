@@ -50,3 +50,22 @@ def test_compare_runs_writes_tables_plots_and_overlays(tmp_path):
     assert (output / "compute_comparison.csv").is_file()
     assert (output / "metric_comparison.png").is_file()
     assert len(list((output / "qualitative_panels").glob("*.png"))) == 4
+
+
+def test_compare_runs_accepts_distinct_labels_for_same_backbone(tmp_path):
+    image = tmp_path / "image.jpg"; mask = tmp_path / "mask.png"
+    Image.new("RGB", (4, 4), "gray").save(image)
+    Image.new("L", (4, 4), 255).save(mask)
+    manifests = {}
+    for dataset in DATASET_ORDER:
+        manifest = tmp_path / f"{dataset}.csv"
+        pd.DataFrame([{"id": "sample", "source": dataset,
+                       "image_path": image, "mask_path": mask}]).to_csv(manifest, index=False)
+        manifests[dataset] = manifest
+    fixed = _fake_run(tmp_path / "fixed", "dinov3_vitb16", manifests, 255)
+    mixed = _fake_run(tmp_path / "mixed", "dinov3_vitb16", manifests, 128)
+    output = compare_runs(
+        fixed, mixed, tmp_path / "ablation", qualitative_count=12,
+        labels=["fixed", "all-12"],
+    )
+    assert set(pd.read_csv(output / "comparison_metrics.csv").backbone) == {"fixed", "all-12"}

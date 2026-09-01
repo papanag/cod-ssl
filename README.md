@@ -123,10 +123,10 @@ The comparison directory contains metric and compute CSVs, training/metric graph
 and 24 paired panels showing the original, ground-truth boundary, probability masks,
 and red prediction overlays for both backbones.
 
-Use `notebooks/04_all_layer_mixture.ipynb` for the follow-up frozen-representation
-experiment. Each backbone exposes all 12 transformer layers; 48 trainable scalar
-logits form four softmax-weighted mixtures for the unchanged common decoder. Both
-backbones remain frozen. The notebook runs the same 40-epoch protocol on all 4,033
-training images, evaluates the locked tests, exports each learned 4×12 weight matrix
-and heatmap, and compares the results directly with notebook 03's fixed
-`[2,5,8,11]` baseline. Stable Drive paths make both runs resumable.
+Use `notebooks/04_all_layer_mixture.ipynb` for the DINOv3 follow-up ablation.
+DINOv3 exposes all 12 frozen transformer layers; 48 trainable scalar logits form four
+softmax-weighted mixtures for the unchanged common decoder. The notebook reuses the
+same 40-epoch, 4,033-image protocol, exports the learned 4×12 matrix and heatmap, and
+compares it with fixed-layer DINOv3. It also writes a new extended table and graph
+containing notebook 03's fixed DINOv3 and official-layer V-JEPA results plus the new
+DINOv3 all-layer result; notebook 03 and its artifacts are never overwritten.

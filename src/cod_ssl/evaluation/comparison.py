@@ -138,10 +138,13 @@ def compare_runs(
     output_dir: str | Path,
     *,
     qualitative_count: int = 24,
+    labels: list[str] | None = None,
 ) -> Path:
     runs = [Path(dino_run), Path(vjepa_run)]
     output = Path(output_dir); output.mkdir(parents=True, exist_ok=True)
-    names = [_model_name(run) for run in runs]
+    names = labels or [_model_name(run) for run in runs]
+    if len(names) != 2 or len(set(names)) != 2:
+        raise ValueError("comparison requires two unique labels")
     metrics = [_load_metrics(run) for run in runs]
     rows = []
     for run_metrics, name in zip(metrics, names):

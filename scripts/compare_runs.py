@@ -13,10 +13,12 @@ def main() -> None:
     parser.add_argument("vjepa_run")
     parser.add_argument("--output", required=True)
     parser.add_argument("--qualitative-count", type=int, default=24)
+    parser.add_argument("--labels", nargs=2)
     args = parser.parse_args()
     output = compare_runs(
         args.dino_run, args.vjepa_run, args.output,
         qualitative_count=args.qualitative_count,
+        labels=args.labels,
     )
     if hasattr(os, "sync"):
         os.sync()

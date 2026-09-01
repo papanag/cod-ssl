@@ -27,6 +27,11 @@ class VJEPA21ViTB16(FrozenBackbone):
     ):
         super().__init__()
         self.configure_layers(layers)
+        supported_layers = {2, 5, 8, 11}
+        if not set(self.layer_indices).issubset(supported_layers):
+            raise ValueError(
+                "V-JEPA 2.1 exposes only its official hierarchical layers [2, 5, 8, 11]"
+            )
         repo = Path(repo_dir or os.environ.get("VJEPA2_REPO_DIR", ""))
         checkpoint = Path(weights or os.environ.get("VJEPA21_WEIGHTS", ""))
         if not (repo / "app" / "vjepa_2_1").is_dir():
