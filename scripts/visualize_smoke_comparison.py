@@ -14,13 +14,12 @@ import torch
 from PIL import Image
 from scipy.stats import wilcoxon
 
-from cod_ssl.backbones import build_backbone
 from cod_ssl.data import CODDataset
 from cod_ssl.engine.evaluate import logits_to_prediction
 from cod_ssl.engine.train import select_amp
 from cod_ssl.evaluation import save_qualitative_panel
 from cod_ssl.metrics import CODMetrics
-from cod_ssl.models import FrozenCODModel
+from cod_ssl.models import build_frozen_cod_model
 from cod_ssl.utils.config import load_config
 
 MODEL_SPECS = [
@@ -55,9 +54,11 @@ def _predict_subset(
     prediction_dir: Path,
 ) -> dict[str, float | int | bool]:
     config = load_config(config_path)
-    model = FrozenCODModel(build_backbone(config["model"]["backbone"]["name"]))
+    model = build_frozen_cod_model(config)
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)
     model.decoder.load_state_dict(state["decoder"], strict=True)
+    if model.layer_mixer is not None:
+        model.layer_mixer.load_state_dict(state["layer_mixer"], strict=True)
     model.assert_backbone_frozen()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     enabled, dtype = select_amp(

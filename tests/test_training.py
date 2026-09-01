@@ -26,6 +26,19 @@ class TinyBackbone(FrozenBackbone):
         return self.validate_features(images, result)
 
 
+class AllLayerTinyBackbone(TinyBackbone):
+    layer_indices = tuple(range(12))
+
+    @property
+    def feature_dims(self):
+        return [4] * 12
+
+    def forward_features(self, images):
+        with torch.inference_mode():
+            result = [torch.full((images.shape[0], 4, 24, 24), float(i)) for i in range(12)]
+        return self.validate_features(images, result)
+
+
 class TinyDecoder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -58,6 +71,17 @@ def test_optimizer_contains_decoder_only():
 
 def test_amp_is_disabled_on_cpu():
     assert select_amp(torch.device("cpu"), True, "auto") == (False, torch.float32)
+
+
+def test_optimizer_includes_mixer_but_never_backbone():
+    model = FrozenCODModel(
+        AllLayerTinyBackbone(), TinyDecoder(), learned_layer_mixtures=4
+    )
+    optimizer = build_decoder_optimizer(model, learning_rate=1e-3, weight_decay=1e-4)
+    optimized = {id(p) for group in optimizer.param_groups for p in group["params"]}
+    assert optimized == {id(p) for p in model.readout_parameters()}
+    assert id(model.layer_mixer.logits) in optimized
+    assert not optimized & {id(p) for p in model.backbone.parameters()}
 
 
 def test_trainer_writes_logs_checkpoint_and_resumes(tmp_path):

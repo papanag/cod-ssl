@@ -1,4 +1,5 @@
 import torch
+import pytest
 from torch import nn
 from cod_ssl.backbones.base import FrozenBackbone
 
@@ -18,3 +19,17 @@ def test_contract_and_freeze():
     assert len(outputs) == 4 and all(x.shape == (2, 8, 24, 24) for x in outputs)
     assert not any(p.requires_grad for p in model.parameters())
 
+
+def test_layer_selection_requires_four_unique_increasing_transformer_indices():
+    model = MockBackbone()
+    model.configure_layers([1, 3, 5, 7])
+    assert model.layer_indices == (1, 3, 5, 7)
+    for invalid in ([1, 3, 5], [1, 3, 3, 7], [3, 1, 5, 7], [1, 3, 5, 12]):
+        with pytest.raises(ValueError):
+            model.configure_layers(invalid)
+
+
+def test_all_twelve_layers_are_a_valid_extraction_contract():
+    model = MockBackbone()
+    model.configure_layers(range(12))
+    assert model.layer_indices == tuple(range(12))

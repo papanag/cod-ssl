@@ -19,8 +19,14 @@ def _clean_encoder_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tens
 
 
 class VJEPA21ViTB16(FrozenBackbone):
-    def __init__(self, repo_dir: str | Path | None = None, weights: str | Path | None = None):
+    def __init__(
+        self,
+        repo_dir: str | Path | None = None,
+        weights: str | Path | None = None,
+        layers: list[int] | tuple[int, ...] | None = None,
+    ):
         super().__init__()
+        self.configure_layers(layers)
         repo = Path(repo_dir or os.environ.get("VJEPA2_REPO_DIR", ""))
         checkpoint = Path(weights or os.environ.get("VJEPA21_WEIGHTS", ""))
         if not (repo / "app" / "vjepa_2_1").is_dir():
@@ -47,7 +53,7 @@ class VJEPA21ViTB16(FrozenBackbone):
 
     @property
     def feature_dims(self) -> list[int]:
-        return [int(self.encoder.embed_dim)] * 4
+        return [int(self.encoder.embed_dim)] * len(self.layer_indices)
 
     def forward_features(self, images: torch.Tensor) -> list[torch.Tensor]:
         if images.ndim != 4 or tuple(images.shape[1:]) != (3, 384, 384):
@@ -55,8 +61,8 @@ class VJEPA21ViTB16(FrozenBackbone):
         # Native image pathway: a single temporal frame activates patch_embed_img.
         with torch.inference_mode():
             tokens = self.encoder(images.unsqueeze(2))
-            if not isinstance(tokens, (list, tuple)) or len(tokens) != 4:
-                raise RuntimeError("V-JEPA did not return four unambiguous layer tensors")
+            if not isinstance(tokens, (list, tuple)) or len(tokens) != len(self.layer_indices):
+                raise RuntimeError("V-JEPA returned an unexpected number of layer tensors")
             features = []
             for layer_tokens in tokens:
                 if layer_tokens.ndim != 3 or layer_tokens.shape[1] != 24 * 24:
@@ -64,4 +70,3 @@ class VJEPA21ViTB16(FrozenBackbone):
                 feature = layer_tokens.transpose(1, 2).reshape(images.shape[0], -1, 24, 24)
                 features.append(feature.detach())
         return self.validate_features(images, features)
-

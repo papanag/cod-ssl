@@ -122,3 +122,11 @@ Stable run names and epoch checkpoints allow a disconnected Colab session to res
 The comparison directory contains metric and compute CSVs, training/metric graphs,
 and 24 paired panels showing the original, ground-truth boundary, probability masks,
 and red prediction overlays for both backbones.
+
+Use `notebooks/04_all_layer_mixture.ipynb` for the follow-up frozen-representation
+experiment. Each backbone exposes all 12 transformer layers; 48 trainable scalar
+logits form four softmax-weighted mixtures for the unchanged common decoder. Both
+backbones remain frozen. The notebook runs the same 40-epoch protocol on all 4,033
+training images, evaluates the locked tests, exports each learned 4×12 weight matrix
+and heatmap, and compares the results directly with notebook 03's fixed
+`[2,5,8,11]` baseline. Stable Drive paths make both runs resumable.

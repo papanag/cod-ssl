@@ -11,12 +11,11 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Subset
 
-from cod_ssl.backbones import build_backbone
 from cod_ssl.data import CODDataset
 from cod_ssl.engine import Trainer, TrainingOptions
 from cod_ssl.engine.evaluate import logits_to_prediction
 from cod_ssl.losses import BCESoftIoULoss
-from cod_ssl.models import FrozenCODModel
+from cod_ssl.models import build_frozen_cod_model
 from cod_ssl.utils.config import load_config
 from cod_ssl.utils.reproducibility import seed_everything
 from cod_ssl.utils.run import create_run_dir, write_run_metadata
@@ -60,8 +59,7 @@ def main() -> None:
         pin_memory=torch.cuda.is_available(),
         persistent_workers=int(config["data"]["num_workers"]) > 0,
     )
-    backbone = build_backbone(backbone_name)
-    model = FrozenCODModel(backbone)
+    model = build_frozen_cod_model(config)
     training = config["training"]
     options = TrainingOptions(
         epochs=int(training["epochs"]),
@@ -111,6 +109,10 @@ def main() -> None:
         "overall_parameters": sum(parameter.numel() for parameter in model.parameters()),
         "backbone_parameters": sum(parameter.numel() for parameter in model.backbone.parameters()),
         "decoder_parameters": sum(parameter.numel() for parameter in model.decoder.parameters()),
+        "layer_mixer_parameters": (
+            sum(parameter.numel() for parameter in model.layer_mixer.parameters())
+            if model.layer_mixer is not None else 0
+        ),
         "trainable_parameters": sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad),
         "training_wall_time_seconds": total_training_seconds,
         "peak_cuda_memory_bytes": (

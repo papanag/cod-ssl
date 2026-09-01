@@ -10,9 +10,8 @@ import yaml
 from PIL import Image
 from torchvision.transforms import functional as TF
 
-from cod_ssl.backbones import build_backbone
 from cod_ssl.data.transforms import MEAN, STD
-from cod_ssl.models import FrozenCODModel
+from cod_ssl.models import build_frozen_cod_model
 
 
 def main() -> None:
@@ -25,9 +24,11 @@ def main() -> None:
     config = yaml.safe_load((run_dir / "config.yaml").read_text())
     checkpoint = Path(args.checkpoint) if args.checkpoint else run_dir / "checkpoints" / "last.pt"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = FrozenCODModel(build_backbone(config["model"]["backbone"]["name"])).to(device)
+    model = build_frozen_cod_model(config).to(device)
     payload = torch.load(checkpoint, map_location=device, weights_only=False)
     model.decoder.load_state_dict(payload["decoder"], strict=True)
+    if model.layer_mixer is not None:
+        model.layer_mixer.load_state_dict(payload["layer_mixer"], strict=True)
     model.eval()
     with Image.open(args.image) as raw:
         image = raw.convert("RGB").resize((384, 384))

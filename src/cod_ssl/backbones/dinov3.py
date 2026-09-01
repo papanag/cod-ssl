@@ -9,8 +9,14 @@ from cod_ssl.backbones.base import FrozenBackbone
 
 
 class DINOv3ViTB16(FrozenBackbone):
-    def __init__(self, repo_dir: str | Path | None = None, weights: str | Path | None = None):
+    def __init__(
+        self,
+        repo_dir: str | Path | None = None,
+        weights: str | Path | None = None,
+        layers: list[int] | tuple[int, ...] | None = None,
+    ):
         super().__init__()
+        self.configure_layers(layers)
         repo = Path(repo_dir or os.environ.get("DINOV3_REPO_DIR", ""))
         checkpoint = Path(weights or os.environ.get("DINOV3_WEIGHTS", ""))
         if not repo.is_dir():
@@ -24,7 +30,7 @@ class DINOv3ViTB16(FrozenBackbone):
 
     @property
     def feature_dims(self) -> list[int]:
-        return [768] * 4
+        return [768] * len(self.layer_indices)
 
     def forward_features(self, images: torch.Tensor) -> list[torch.Tensor]:
         with torch.inference_mode():
@@ -33,4 +39,3 @@ class DINOv3ViTB16(FrozenBackbone):
             )
             features = [output.detach() for output in outputs]
         return self.validate_features(images, features)
-

@@ -42,9 +42,8 @@ def build_decoder_optimizer(
     model: FrozenCODModel, *, learning_rate: float, weight_decay: float
 ) -> AdamW:
     model.assert_backbone_frozen()
-    optimizer = AdamW(
-        model.decoder.parameters(), lr=learning_rate, weight_decay=weight_decay
-    )
+    readout_parameters = list(model.readout_parameters())
+    optimizer = AdamW(readout_parameters, lr=learning_rate, weight_decay=weight_decay)
     backbone_ids = {id(parameter) for parameter in model.backbone.parameters()}
     optimizer_ids = {
         id(parameter)
@@ -53,9 +52,9 @@ def build_decoder_optimizer(
     }
     if backbone_ids & optimizer_ids:
         raise RuntimeError("optimizer contains a backbone parameter")
-    decoder_ids = {id(parameter) for parameter in model.decoder.parameters()}
-    if optimizer_ids != decoder_ids:
-        raise RuntimeError("optimizer must contain every decoder parameter and nothing else")
+    readout_ids = {id(parameter) for parameter in readout_parameters}
+    if optimizer_ids != readout_ids:
+        raise RuntimeError("optimizer must contain every readout parameter and nothing else")
     return optimizer
 
 
@@ -117,6 +116,10 @@ class Trainer:
                 "epoch": epoch,
                 "global_step": self.global_step,
                 "decoder": self.model.decoder.state_dict(),
+                "layer_mixer": (
+                    self.model.layer_mixer.state_dict()
+                    if self.model.layer_mixer is not None else None
+                ),
                 "optimizer": self.optimizer.state_dict(),
                 "scheduler": self.scheduler.state_dict(),
                 "scaler": self.scaler.state_dict(),
@@ -129,6 +132,10 @@ class Trainer:
     def resume(self, checkpoint: str | Path) -> None:
         state = torch.load(checkpoint, map_location=self.device, weights_only=False)
         self.model.decoder.load_state_dict(state["decoder"], strict=True)
+        if self.model.layer_mixer is not None:
+            if state.get("layer_mixer") is None:
+                raise KeyError("checkpoint has no learned layer-mixer state")
+            self.model.layer_mixer.load_state_dict(state["layer_mixer"], strict=True)
         self.optimizer.load_state_dict(state["optimizer"])
         self.scheduler.load_state_dict(state["scheduler"])
         if state.get("scaler"):
@@ -178,7 +185,7 @@ class Trainer:
             should_step = (batch_index + 1) % self.options.accumulation_steps == 0 or last_batch
             if should_step:
                 self.scaler.unscale_(self.optimizer)
-                clip_grad_norm_(self.model.decoder.parameters(), self.options.grad_clip_norm)
+                clip_grad_norm_(self.model.readout_parameters(), self.options.grad_clip_norm)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad(set_to_none=True)

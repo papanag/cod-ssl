@@ -11,11 +11,10 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-from cod_ssl.backbones import build_backbone
 from cod_ssl.data import CODDataset
 from cod_ssl.engine import Evaluator
 from cod_ssl.engine.train import select_amp
-from cod_ssl.models import FrozenCODModel
+from cod_ssl.models import build_frozen_cod_model
 from cod_ssl.utils.reproducibility import seed_everything
 
 
@@ -32,10 +31,13 @@ def main() -> None:
     checkpoint = Path(args.checkpoint) if args.checkpoint else run_dir / "checkpoints" / "last.pt"
     if not checkpoint.is_file():
         raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
-    backbone = build_backbone(config["model"]["backbone"]["name"])
-    model = FrozenCODModel(backbone)
+    model = build_frozen_cod_model(config)
     state = torch.load(checkpoint, map_location="cpu", weights_only=False)
     model.decoder.load_state_dict(state["decoder"], strict=True)
+    if model.layer_mixer is not None:
+        if state.get("layer_mixer") is None:
+            raise KeyError("checkpoint has no learned layer-mixer state")
+        model.layer_mixer.load_state_dict(state["layer_mixer"], strict=True)
     model.assert_backbone_frozen()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

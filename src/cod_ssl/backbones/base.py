@@ -12,6 +12,14 @@ class FrozenBackbone(nn.Module, ABC):
     grid_size = 24
     layer_indices = (2, 5, 8, 11)
 
+    def configure_layers(self, layers: Sequence[int] | None) -> None:
+        selected = tuple(self.layer_indices if layers is None else map(int, layers))
+        if len(selected) not in {4, 12} or len(set(selected)) != len(selected):
+            raise ValueError("backbone extraction requires four or twelve unique layers")
+        if tuple(sorted(selected)) != selected or selected[0] < 0 or selected[-1] > 11:
+            raise ValueError("backbone layers must be increasing indices in [0, 11]")
+        self.layer_indices = selected
+
     def freeze(self) -> None:
         self.eval()
         for parameter in self.parameters():
@@ -37,8 +45,10 @@ class FrozenBackbone(nn.Module, ABC):
     ) -> list[torch.Tensor]:
         if images.ndim != 4 or tuple(images.shape[1:]) != (3, 384, 384):
             raise ValueError(f"expected input [B,3,384,384], got {tuple(images.shape)}")
-        if len(features) != 4:
-            raise RuntimeError(f"expected exactly 4 features, got {len(features)}")
+        if len(features) != len(self.feature_dims):
+            raise RuntimeError(
+                f"expected {len(self.feature_dims)} features, got {len(features)}"
+            )
         checked = list(features)
         for index, (feature, channels) in enumerate(zip(checked, self.feature_dims)):
             expected = (images.shape[0], channels, 24, 24)
@@ -59,4 +69,3 @@ def build_backbone(name: str, **kwargs: object) -> FrozenBackbone:
         from cod_ssl.backbones.vjepa21 import VJEPA21ViTB16
         return VJEPA21ViTB16(**kwargs)
     raise ValueError(f"unknown backbone: {name}")
-

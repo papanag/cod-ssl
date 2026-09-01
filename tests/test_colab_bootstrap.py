@@ -38,6 +38,7 @@ def test_every_operational_notebook_starts_with_fresh_kernel_launcher():
         "01_backbone_feature_smoke_test.ipynb",
         "02_frozen_baseline_smoke_train.ipynb",
         "03_full_frozen_comparison.ipynb",
+        "04_all_layer_mixture.ipynb",
     ):
         notebook = json.loads((root / "notebooks" / name).read_text())
         launcher = "".join(notebook["cells"][1]["source"])
