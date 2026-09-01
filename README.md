@@ -4,6 +4,10 @@ The project covers Milestones A–I: project/data foundations, frozen backbone
 adapters, the common decoder/loss, reproducible training and evaluation, Colab
 workflows, and the full frozen-backbone comparison with qualitative overlays.
 
+It also contains the gated implementation for the focused VCOD extension: DS
+(DINO image), VI (official V-JEPA2.1 image path), DT (framewise DINO plus
+GatedMambaMix), and VV (native V-JEPA2.1 video). DM and VR are diagnostics only.
+
 ## Setup
 
 Use Python 3.11, clone the official `facebookresearch/dinov3` and
@@ -17,6 +21,81 @@ pytest
 python scripts/runtime_check.py
 python scripts/inspect_backbone.py --backbone dinov3_vitb16 --image /path/to/cod.jpg
 python scripts/inspect_backbone.py --backbone vjepa21_vitb16 --image /path/to/cod.jpg
+```
+
+For DT training, install the optional CUDA GMMix dependency with
+`pip install -e '.[dev,vcod]'`. The reference provenance and pinned commit are
+recorded in `docs/gmmix_provenance.md`.
+
+## Focused video study
+
+Video data is represented by a canonical CSV manifest with these required
+columns: `dataset,regime,split,video_id,source_video_id,frame_id,frame_number,
+image_path,mask_path,annotation_type`. Optional `fps` and JSON `attributes`
+columns are preserved. Paths should be absolute so run snapshots remain
+unambiguous.
+
+Set `MOCA_MASK_MANIFEST` and `CAMOVID60K_MANIFEST` to locally prepared official
+manifests. Dataset releases, credentials, checkpoints, and outputs stay outside
+Git. Execute the correctness gates before training:
+
+```bash
+python scripts/inspect_dataset.py --config configs/datasets/moca_mask.yaml \
+  --output outputs/inspection/moca_mask
+python scripts/inspect_dataset.py --config configs/datasets/camovid60k.yaml \
+  --regime small_displacement --output outputs/inspection/camovid60k_small
+python scripts/inspect_backbone.py --model vjepa21_vitb16 --pathway video \
+  --clip-length 64 --target-index 32
+pytest
+```
+
+The official V-JEPA2.1 hub geometry locks the primary clip to 64 frames,
+tubelet size 2, stride 1, and source target index 32. The selected temporal
+token is 16 and covers source indices 32–33. See
+`docs/vjepa21_dense_mapping.md`; manual checkpoint-specific sign-off is still
+mandatory before a scientific test run.
+
+The Colab workflow is split into three thin, independently restartable
+notebooks:
+
+- `notebooks/05_vcod_setup_validation.ipynb` runs dataset inspection,
+  cross-dataset/source-pairing audits, backbone mapping checks, visual QA, and
+  writes the manual approval receipt.
+- `notebooks/06_vcod_run_cell.ipynb` runs one smoke, validation-tuning, final,
+  or diagnostic cell at a time with a stable Drive path and automatic resume.
+- `notebooks/07_vcod_summarize.ipynb` reads only `vcod/runs`, requires every
+  declared primary cell, and generates the paired report.
+
+Keep canonical manifests under `MyDrive/cod-ssl/vcod/manifests`, and never copy
+smoke or tuning outputs into the final `vcod/runs` directory. The VCOD trainer
+writes readout-only atomic checkpoints every 250 optimizer steps so a Colab
+disconnect loses bounded work and cannot leave a partially written checkpoint.
+
+Preview the exact 12-cell-per-seed matrix without starting compute:
+
+```bash
+python scripts/run_primary_matrix.py \
+  --config configs/experiments/vcod_primary_2x2.yaml \
+  --datasets moca_mask camovid60k_small camovid60k_large \
+  --systems DS VI DT VV --seeds 42 43 44 --dry-run
+```
+
+Train/evaluate an individual probe after dataset and backbone gates pass:
+
+```bash
+python scripts/train_probe.py --config configs/experiments/vcod_primary_2x2.yaml \
+  experiment.system_id=DT dataset.name=moca_mask --smoke
+python scripts/evaluate.py --run-dir outputs/<run_id> --split test --save-logits
+```
+
+The evaluator writes float logits/raw sigmoid/min-max views separately,
+`per_frame.csv`, `per_video.csv`, and `summary.json`. Build the paired report
+only after all requested primary cells exist:
+
+```bash
+python scripts/summarize_results.py --runs-root outputs \
+  --matrix configs/experiments/vcod_primary_2x2.yaml \
+  --output outputs/reports/primary_comparison
 ```
 
 Both commands enforce four `[B,768,24,24]` frozen feature maps from layers

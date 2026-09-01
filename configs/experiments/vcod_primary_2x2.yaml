@@ -1,0 +1,62 @@
+experiment:
+  name: vcod_primary_2x2
+  system_id: DS
+  seed: 42
+  output_root: outputs
+  primary: true
+dataset:
+  name: moca_mask
+  root_env: MOCA_MASK_ROOT
+  manifest_env: MOCA_MASK_MANIFEST
+  regime: default
+  annotation_policy: manual_test
+clip:
+  length: 64
+  stride: 1
+  target_index: 32
+  boundary_mode: replicate
+  ordered: true
+  lock_basis: vjepa21_native_num_frames
+backbone:
+  name: dinov3_vitb16
+  checkpoint_sha256: local_required
+  frozen: true
+  feature_layer: 11
+  input_size: [384, 384]
+  precision: bf16
+temporal_adapter:
+  name: target
+  config: {}
+decoder:
+  name: small_conv_v1
+  projected_channels: 256
+  hidden_channels: 128
+training:
+  loss: bce_plus_dice
+  optimizer: adamw
+  learning_rate: 0.0003
+  learning_rate_grid: [0.0001, 0.0003, 0.001]
+  weight_decay: 0.01
+  batch_size: 1
+  gradient_accumulation: 4
+  max_steps: 10000
+  checkpoint_every_steps: 250
+  validation_every_steps: 500
+  early_stopping_metric: val_video_weighted_S
+  early_stopping_patience: 10
+  num_workers: 4
+evaluation:
+  cod_prediction_view: minmax
+  diagnostic_prediction_view: sigmoid_raw
+  save_logits: true
+  save_all_predictions: false
+  bootstrap_resamples: 10000
+  bootstrap_seed: 20260901
+reproducibility:
+  deterministic_algorithms: true
+  cudnn_benchmark: false
+systems:
+  DS: {backbone: dinov3_vitb16, input: target_only, adapter: target, pathway: image}
+  VI: {backbone: vjepa21_vitb16, input: target_only, adapter: target, pathway: image}
+  DT: {backbone: dinov3_vitb16, input: ordered_real_clip, adapter: gated_mamba_mix, pathway: framewise_video}
+  VV: {backbone: vjepa21_vitb16, input: ordered_real_clip, adapter: vjepa_native, pathway: native_video}

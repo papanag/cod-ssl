@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+
 import pandas as pd
+from tqdm.auto import tqdm
+
 from cod_ssl.data.manifests import create_dev_split
 
 
@@ -27,7 +30,10 @@ def main() -> None:
         p.error("pair generation requires --source, --images, --masks, and --output")
     images, masks = Path(a.images), Path(a.masks)
     rows = []
-    for image in sorted(path for path in images.glob(a.image_glob) if path.is_file()):
+    image_paths = sorted(path for path in images.glob(a.image_glob) if path.is_file())
+    for image in tqdm(
+        image_paths, desc="pair images and masks", unit="image", dynamic_ncols=True
+    ):
         mask = masks / f"{image.stem}{a.mask_suffix}"
         if not mask.is_file(): raise FileNotFoundError(f"missing mask for {image}: {mask}")
         rows.append({"id": image.stem, "source": a.source,

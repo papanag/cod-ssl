@@ -1,0 +1,7 @@
+name: camovid60k
+root_env: CAMOVID60K_ROOT
+manifest_env: CAMOVID60K_MANIFEST
+regimes: [small_displacement, large_displacement]
+annotation_policy: official
+validation_fraction: 0.1
+validation_seed: 42

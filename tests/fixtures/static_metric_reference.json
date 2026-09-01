@@ -1,0 +1,13 @@
+{
+  "description": "Deterministic 32x32 radial prediction through the unchanged py_sod_metrics adapter",
+  "tolerance": 1e-10,
+  "metrics": {
+    "s_measure": 0.8343518800095704,
+    "e_adaptive": 0.9686207088223169,
+    "weighted_f": 0.614489966812911,
+    "mae": 0.13310355392156864,
+    "e_mean": 0.6444513316225788,
+    "e_max": 1.0009775171065467,
+    "num_images": 1
+  }
+}

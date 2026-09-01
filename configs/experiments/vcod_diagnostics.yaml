@@ -1,0 +1,8 @@
+base: vcod_primary_2x2.yaml
+experiment:
+  name: vcod_diagnostics
+  system_id: DM
+  primary: false
+systems:
+  DM: {backbone: dinov3_vitb16, input: ordered_real_clip, adapter: mean, pathway: framewise_video}
+  VR: {backbone: vjepa21_vitb16, input: repeated_target, adapter: vjepa_native, pathway: native_video}

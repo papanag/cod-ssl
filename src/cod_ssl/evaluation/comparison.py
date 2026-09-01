@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from PIL import Image, ImageFilter
+from tqdm.auto import tqdm
 
 DATASET_ORDER = ["camo_test", "cod10k_test", "chameleon", "nc4k"]
 METRICS = ["s_measure", "e_adaptive", "weighted_f", "mae"]
@@ -167,6 +168,13 @@ def compare_runs(
     pd.DataFrame(compute_rows).to_csv(output / "compute_comparison.csv", index=False)
 
     candidates = []
+    candidate_total = sum(len(pd.read_csv(_manifest_path(runs[0], dataset))) for dataset in DATASET_ORDER)
+    candidate_progress = tqdm(
+        total=candidate_total,
+        desc="score paired predictions",
+        unit="image",
+        dynamic_ncols=True,
+    )
     for dataset in DATASET_ORDER:
         frame = pd.read_csv(_manifest_path(runs[0], dataset))
         for row in frame.itertuples(index=False):
@@ -181,6 +189,9 @@ def compare_runs(
                  "mask_path": row.mask_path, "dino_dice": scores[0], "vjepa_dice": scores[1],
                  "difference": scores[0] - scores[1], "mean_dice": sum(scores) / 2}
             )
+            candidate_progress.update(1)
+            candidate_progress.set_postfix(dataset=dataset, refresh=False)
+    candidate_progress.close()
     candidates = pd.DataFrame(candidates)
     selected = []
     base_count, remainder = divmod(qualitative_count, len(DATASET_ORDER))
@@ -203,7 +214,13 @@ def compare_runs(
     selected = pd.concat(selected).reset_index(drop=True)
     selected.to_csv(output / "qualitative_selection.csv", index=False)
     panels = output / "qualitative_panels"; panels.mkdir(exist_ok=True)
-    for row in selected.itertuples(index=False):
+    for row in tqdm(
+        selected.itertuples(index=False),
+        total=len(selected),
+        desc="render qualitative panels",
+        unit="panel",
+        dynamic_ncols=True,
+    ):
         predictions = [_mask(run / "predictions" / row.dataset / f"{row.id}.png") for run in runs]
         save_qualitative_panel(
             pd.Series(row._asdict()), *predictions,

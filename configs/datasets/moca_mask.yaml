@@ -1,0 +1,7 @@
+name: moca_mask
+root_env: MOCA_MASK_ROOT
+manifest_env: MOCA_MASK_MANIFEST
+regime: default
+annotation_policy: manual_test
+validation_fraction: 0.1
+validation_seed: 42

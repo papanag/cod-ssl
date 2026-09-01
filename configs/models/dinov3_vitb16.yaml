@@ -1,0 +1,11 @@
+name: dinov3_vitb16
+repository_env: DINOV3_REPO_DIR
+checkpoint_env: DINOV3_WEIGHTS
+checkpoint_sha256: local_required
+frozen: true
+feature_layer: 11
+input_size: [384, 384]
+patch_size: [16, 16]
+feature_dim: 768
+precision: bf16
+normalization: imagenet_mean_std

@@ -1,10 +1,31 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any
 
 import torch
 from torch import nn
+
+
+@dataclass(frozen=True)
+class DenseFeatureBatch:
+    features: torch.Tensor  # B,T,C,Hf,Wf
+    temporal_valid: torch.BoolTensor  # B,T
+    spatial_size: tuple[int, int]
+    source_frame_intervals: tuple[tuple[int, int], ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.features.ndim != 5:
+            raise ValueError(f"dense features must be [B,T,C,Hf,Wf], got {tuple(self.features.shape)}")
+        if self.temporal_valid.dtype != torch.bool or tuple(self.temporal_valid.shape) != tuple(self.features.shape[:2]):
+            raise ValueError("temporal_valid must be bool [B,T]")
+        if self.spatial_size != tuple(self.features.shape[-2:]):
+            raise ValueError("spatial_size does not match dense features")
+        if len(self.source_frame_intervals) != self.features.shape[1]:
+            raise ValueError("one source-frame interval is required per temporal feature")
 
 
 class FrozenBackbone(nn.Module, ABC):
@@ -25,7 +46,7 @@ class FrozenBackbone(nn.Module, ABC):
         for parameter in self.parameters():
             parameter.requires_grad_(False)
 
-    def train(self, mode: bool = True) -> "FrozenBackbone":
+    def train(self, mode: bool = True) -> FrozenBackbone:
         # A frozen feature extractor must remain in evaluation mode even when a
         # containing model is switched to train mode.
         return super().train(False)

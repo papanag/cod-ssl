@@ -5,25 +5,211 @@ import argparse
 import csv
 import json
 import os
+import time
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import torch
 import yaml
+from PIL import Image
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from cod_ssl.data import CODDataset
+from cod_ssl.data.clip_sampler import ClipSpec
+from cod_ssl.data.video_manifest import ManifestVideoCODDataset
 from cod_ssl.engine import Evaluator
 from cod_ssl.engine.train import select_amp
-from cod_ssl.models import build_frozen_cod_model
+from cod_ssl.evaluation.video_predictions import logits_to_float_views
+from cod_ssl.metrics import CODMetrics
+from cod_ssl.metrics.aggregation import aggregate_frame_and_video, per_video_table
+from cod_ssl.models import build_frozen_cod_model, build_video_cod_model
 from cod_ssl.utils.reproducibility import seed_everything
+
+
+def evaluate_video_run(
+    run_dir: Path, checkpoint_arg: str | None, split: str, save_logits: bool
+) -> None:
+    config = yaml.safe_load((run_dir / "config_resolved.yaml").read_text())
+    seed_everything(int(config["experiment"]["seed"]))
+    manifest = os.environ.get(
+        config["dataset"]["manifest_env"],
+        config["dataset"].get("split_manifest", ""),
+    )
+    if not manifest:
+        raise FileNotFoundError(f"set {config['dataset']['manifest_env']} for video evaluation")
+    clip = config["clip"]
+    system = config["experiment"]["system_id"]
+    sample_spec = (
+        ClipSpec(1, 1, 0)
+        if system in {"DS", "VI"}
+        else ClipSpec(
+            int(clip["length"]), int(clip["stride"]), int(clip["target_index"])
+        )
+    )
+    dataset = ManifestVideoCODDataset(
+        manifest,
+        split=split,
+        clip_spec=sample_spec,
+        training=False,
+        size=int(config["backbone"]["input_size"][0]),
+        regime=config["dataset"]["regime"],
+    )
+    loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+    if not len(loader):
+        raise ValueError("video evaluation manifest contains no targets for this split/regime")
+    model = build_video_cod_model(config)
+    if checkpoint_arg:
+        checkpoint = Path(checkpoint_arg)
+    else:
+        best = run_dir / "checkpoints" / "best.pt"
+        checkpoint = best if best.is_file() else run_dir / "checkpoints" / "last.pt"
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"video checkpoint not found: {checkpoint}")
+    state = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    payload = state.get("readout", state)
+    missing, unexpected = model.load_state_dict(payload, strict=False)
+    if unexpected or any(not key.startswith("backbone.") for key in missing):
+        raise RuntimeError(f"invalid readout checkpoint keys: missing={missing}, unexpected={unexpected}")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device).eval()
+    model.assert_gradient_contract()
+    prediction_dir = run_dir / "predictions"
+    prediction_dir.mkdir(parents=True, exist_ok=True)
+    progress_path = run_dir / "evaluation_progress.json"
+    evaluation_started = time.perf_counter()
+    rows, keys = [], set()
+    progress = tqdm(
+        loader,
+        total=len(loader),
+        desc=f"evaluate {system} {config['dataset']['name']}/{config['dataset']['regime']}",
+        unit="target",
+        dynamic_ncols=True,
+    )
+    for batch in progress:
+        for key in ("frames", "target_mask", "valid_temporal_mask"):
+            batch[key] = batch[key].to(device)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        started = time.perf_counter()
+        with torch.inference_mode(), torch.autocast(
+            device_type=device.type,
+            dtype=torch.bfloat16,
+            enabled=device.type == "cuda",
+        ):
+            output = model(batch)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        inference_ms = (time.perf_counter() - started) * 1000
+        mask_path = batch["metadata"]["mask_path"][0]
+        with Image.open(mask_path) as raw_mask:
+            ground_truth = np.asarray(raw_mask.convert("L"), dtype=np.uint8)
+        views = logits_to_float_views(output["logits"], ground_truth.shape)
+        metric = CODMetrics()
+        metric.step(views["minmax_uint8"], ground_truth)
+        values = metric.compute()
+        source_id, frame_id = batch["source_video_id"][0], batch["frame_id"][0]
+        key = (source_id, int(batch["frame_number"][0]))
+        if key in keys:
+            raise ValueError(f"duplicate evaluation target key: {key}")
+        keys.add(key)
+        if save_logits or config["evaluation"]["save_logits"]:
+            np.savez_compressed(
+                prediction_dir / f"{source_id}__{frame_id}.npz",
+                logits=output["logits"].float().cpu().numpy(),
+                sigmoid_raw=views["sigmoid_raw"],
+                minmax=views["minmax"],
+            )
+        target_binary = ground_truth > 0
+        row = {
+            "run_id": run_dir.name, "system_id": config["experiment"]["system_id"],
+            "dataset": config["dataset"]["name"], "regime": config["dataset"]["regime"],
+            "split": split, "seed": config["experiment"]["seed"],
+            "video_id": batch["video_id"][0], "source_video_id": source_id,
+            "frame_id": frame_id, "frame_number": int(batch["frame_number"][0]),
+            "annotation_type": batch["annotation_type"][0],
+            "target_index": int(batch["target_index"][0]),
+            "source_frame_indices": json.dumps([int(value[0]) for value in batch["source_frame_indices"]]),
+            "foreground_fraction": float(target_binary.mean()), "motion_proxy": np.nan,
+            "S": values["s_measure"], "E_adapt": values["e_adaptive"],
+            "weightedF": values["weighted_f"], "MAE": values["mae"],
+            "E_mean": values["e_mean"], "E_max": values["e_max"],
+            "raw_mean_probability": float(views["sigmoid_raw"].mean()),
+            "raw_max_probability": float(views["sigmoid_raw"].max()),
+            "inference_ms": inference_ms, "attributes": json.dumps(batch["attributes"], default=str),
+        }
+        rows.append(row)
+        completed = len(rows)
+        if completed % 25 == 0 or completed == len(loader):
+            elapsed = time.perf_counter() - evaluation_started
+            receipt = {
+                "status": "running",
+                "completed_targets": completed,
+                "total_targets": len(loader),
+                "current_video_id": source_id,
+                "current_frame_number": row["frame_number"],
+                "elapsed_seconds": elapsed,
+                "eta_seconds": elapsed / completed * (len(loader) - completed),
+                "mean_inference_ms": float(
+                    np.mean([item["inference_ms"] for item in rows])
+                ),
+            }
+            temporary = progress_path.with_suffix(".json.part")
+            temporary.write_text(json.dumps(receipt, indent=2) + "\n")
+            temporary.replace(progress_path)
+        progress.set_postfix(
+            video=source_id,
+            frame=row["frame_number"],
+            S=f"{row['S']:.3f}",
+            ms=f"{inference_ms:.1f}",
+            refresh=False,
+        )
+    frame = pd.DataFrame(rows)
+    frame.to_csv(run_dir / "per_frame.csv", index=False)
+    videos = per_video_table(frame)
+    videos.to_csv(run_dir / "per_video.csv", index=False)
+    aggregates = aggregate_frame_and_video(frame)
+    summary = {
+        "schema_version": 1,
+        "run": {"run_id": run_dir.name, "system_id": config["experiment"]["system_id"],
+                "dataset": config["dataset"]["name"], "regime": config["dataset"]["regime"],
+                "seed": config["experiment"]["seed"]},
+        "representation": {"backbone": config["backbone"]["name"],
+                           "pathway": config["pathway"], "feature_layer": config["backbone"]["feature_layer"],
+                           "temporal_adapter": config["temporal_adapter"]["name"],
+                           "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
+                           "frozen_parameters": sum(p.numel() for p in model.parameters() if not p.requires_grad)},
+        "clip": clip,
+        "metrics": {"minmax": aggregates, "sigmoid_raw_diagnostics": {
+            "mean_probability": float(frame.raw_mean_probability.mean())}},
+        "prediction_view": "minmax",
+        "timing": {"mode": "cold", "ms_per_output_frame": float(frame.inference_ms.mean()),
+                   "peak_gpu_memory_mb": (torch.cuda.max_memory_allocated(device) / 2**20 if device.type == "cuda" else 0)},
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    final_progress = json.loads(progress_path.read_text())
+    final_progress["status"] = "complete"
+    final_progress["eta_seconds"] = 0.0
+    progress_path.write_text(json.dumps(final_progress, indent=2) + "\n")
+    (run_dir / "EVALUATION_COMPLETE").write_text("complete\n")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run", required=True)
+    parser.add_argument("--run")
+    parser.add_argument("--run-dir")
     parser.add_argument("--checkpoint")
     parser.add_argument("--dataset", choices=["camo_test", "cod10k_test", "chameleon", "nc4k"])
+    parser.add_argument("--split", default="test")
+    parser.add_argument("--save-logits", action="store_true")
     args = parser.parse_args()
+
+    if args.run_dir:
+        evaluate_video_run(Path(args.run_dir), args.checkpoint, args.split, args.save_logits)
+        return
+    if not args.run:
+        parser.error("one of --run or --run-dir is required")
 
     run_dir = Path(args.run)
     config = yaml.safe_load((run_dir / "config.yaml").read_text())
@@ -53,7 +239,9 @@ def main() -> None:
         raise ValueError("Phase-1 evaluation requires saving the exact evaluator PNGs")
     dataset_names = [args.dataset] if args.dataset else list(evaluation["manifests"])
     all_results: dict[str, dict] = {}
-    for dataset_name in dataset_names:
+    for dataset_name in tqdm(
+        dataset_names, desc="evaluation datasets", unit="dataset", dynamic_ncols=True
+    ):
         dataset = CODDataset(evaluation["manifests"][dataset_name], training=False)
         loader = DataLoader(
             dataset,

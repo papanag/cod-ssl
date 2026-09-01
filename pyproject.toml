@@ -30,11 +30,13 @@ dependencies = [
   "gdown",
   "matplotlib",
   "scipy",
+  "tabulate",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
-notebooks = []
+vcod = ["mamba-ssm"]
+notebooks = ["nbformat"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

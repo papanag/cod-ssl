@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
+from tqdm.auto import tqdm
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 
@@ -28,15 +29,29 @@ def extract_archive(archive: str | Path, destination: str | Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     if zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as handle:
-            for member in handle.infolist():
+            members = handle.infolist()
+            for member in members:
                 _safe_destination(destination, member.filename)
-            handle.extractall(destination)
+            for member in tqdm(
+                members,
+                desc=f"extract {archive.name}",
+                unit="file",
+                dynamic_ncols=True,
+            ):
+                handle.extract(member, destination)
         return
     if tarfile.is_tarfile(archive):
         with tarfile.open(archive) as handle:
-            for member in handle.getmembers():
+            members = handle.getmembers()
+            for member in members:
                 _safe_destination(destination, member.name)
-            handle.extractall(destination, filter="data")
+            for member in tqdm(
+                members,
+                desc=f"extract {archive.name}",
+                unit="file",
+                dynamic_ncols=True,
+            ):
+                handle.extract(member, destination, filter="data")
         return
     raise ValueError(f"unsupported archive: {archive}")
 

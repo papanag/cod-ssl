@@ -1,0 +1,36 @@
+import importlib.util
+from pathlib import Path
+
+import torch
+from torch import nn
+
+
+def _module():
+    path = Path(__file__).parents[1] / "scripts" / "train_probe.py"
+    spec = importlib.util.spec_from_file_location("train_probe", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class TinyModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone = nn.Linear(2, 2)
+        self.readout = nn.Linear(2, 1)
+
+
+def test_atomic_checkpoint_contains_only_readout_and_resume_identity(tmp_path):
+    module = _module()
+    model = TinyModel()
+    optimizer = torch.optim.AdamW(model.readout.parameters())
+    target = tmp_path / "last.pt"
+    module._save_checkpoint(target, model, optimizer, 250, "config-hash")
+    assert target.is_file()
+    assert not target.with_suffix(".pt.part").exists()
+    state = torch.load(target, map_location="cpu", weights_only=False)
+    assert state["global_step"] == 250
+    assert state["config_sha256"] == "config-hash"
+    assert state["readout"]
+    assert all(not key.startswith("backbone.") for key in state["readout"])

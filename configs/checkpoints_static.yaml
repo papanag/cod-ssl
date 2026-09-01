@@ -1,0 +1,18 @@
+schema_version: 1
+input_geometry: [384, 384]
+normalization: imagenet_mean_std
+backbones:
+  dinov3_vitb16:
+    official_repository: https://github.com/facebookresearch/dinov3
+    checkpoint_env: DINOV3_WEIGHTS
+    repository_env: DINOV3_REPO_DIR
+    layers: [2, 5, 8, 11]
+    patch_size: [16, 16]
+  vjepa21_vitb16:
+    official_repository: https://github.com/facebookresearch/vjepa2
+    checkpoint_env: VJEPA21_WEIGHTS
+    repository_env: VJEPA2_REPO_DIR
+    state_key: ema_encoder
+    layers: [2, 5, 8, 11]
+    patch_size: [16, 16]
+    image_pathway: img_temporal_dim_size_1

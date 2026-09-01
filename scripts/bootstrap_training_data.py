@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import gdown
+from tqdm.auto import tqdm
 
 from cod_ssl.data.bootstrap import (
     build_standard_train_manifest,
@@ -32,6 +33,7 @@ def main() -> None:
     archive = root / "archives" / "cod_standard_train.zip"
     extracted = root / "standard_train"
     archive.parent.mkdir(parents=True, exist_ok=True)
+    progress = tqdm(total=4, desc="prepare training data", unit="stage", dynamic_ncols=True)
     if not archive.is_file():
         print("Downloading the official SINet/COD10K combined training archive...")
         result = gdown.download(id=OFFICIAL_TRAIN_FILE_ID, output=str(archive), quiet=False)
@@ -39,13 +41,19 @@ def main() -> None:
             raise RuntimeError("Google Drive dataset download failed or quota was exceeded")
     else:
         print(f"Using cached archive: {archive}")
+    progress.update(1)
+    progress.set_postfix(stage="archive ready", refresh=False)
     try:
         image_dir, mask_dir = discover_standard_training_pair(extracted)
     except RuntimeError:
         print(f"Extracting {archive} to {extracted}...")
         extract_archive(archive, extracted)
         image_dir, mask_dir = discover_standard_training_pair(extracted)
+    progress.update(1)
+    progress.set_postfix(stage="data discovered", refresh=False)
     frame = build_standard_train_manifest(image_dir, mask_dir, args.manifest)
+    progress.update(1)
+    progress.set_postfix(stage="manifest built", refresh=False)
     exclusions = load_exclusion_policy(args.exclusions)["train_all"]
     frame, removed = exclude_manifest_rows(
         frame, exclusions, dataset_name="train_all", require_all=True
@@ -55,6 +63,8 @@ def main() -> None:
     exclusion_report.write_text(
         json.dumps({"dataset": "train_all", "removed_ids": removed}, indent=2) + "\n"
     )
+    progress.update(1)
+    progress.close()
     print(f"Images: {image_dir}")
     print(f"Masks: {mask_dir}")
     print(frame.groupby("source").size())

@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 from PIL import Image
+from tqdm.auto import tqdm
 
 from cod_ssl.data.exclusions import load_exclusion_policy
 
@@ -69,14 +70,20 @@ def validate(manifest_dir: str | Path, exclusions: str | Path, *, skip_hashes: b
     seen_paths: set[Path] = set()
     train_hashes: dict[str, str] = {}
     test_hashes: dict[str, str] = {}
-    for name, expected in EXPECTED.items():
+    for name in EXPECTED:
         frame = pd.read_csv(manifest_dir / f"{name}.csv")
         excluded = exclusion_policy.get(name, set())
         present = sorted(set(frame.id.astype(str).map(lambda value: Path(value).stem)) & excluded)
         if present:
             raise ValueError(f"{name} still contains excluded overlap IDs: {present}")
-        print(f"Validating {name}: {expected} pairs", flush=True)
-        for index, row in enumerate(frame.itertuples(), start=1):
+        rows = tqdm(
+            frame.itertuples(),
+            total=len(frame),
+            desc=f"validate {name}",
+            unit="pair",
+            dynamic_ncols=True,
+        )
+        for row in rows:
             image, mask = Path(row.image_path).resolve(), Path(row.mask_path).resolve()
             if image in seen_paths:
                 raise ValueError(f"duplicate image path: {image}")
@@ -90,8 +97,6 @@ def validate(manifest_dir: str | Path, exclusions: str | Path, *, skip_hashes: b
             if not skip_hashes:
                 target = train_hashes if name == "train_all" else test_hashes
                 target[digest(image)] = f"{name}/{row.id}"
-            if index % 500 == 0 or index == expected:
-                print(f"  {index}/{expected}", flush=True)
     if not skip_hashes:
         overlap = sorted(set(train_hashes) & set(test_hashes))
         if overlap:

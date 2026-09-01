@@ -13,6 +13,7 @@ import pandas as pd
 import torch
 from PIL import Image
 from scipy.stats import wilcoxon
+from tqdm.auto import tqdm
 
 from cod_ssl.data import CODDataset
 from cod_ssl.engine.evaluate import logits_to_prediction
@@ -52,6 +53,7 @@ def _predict_subset(
     dataset: CODDataset,
     subset_size: int,
     prediction_dir: Path,
+    label: str,
 ) -> dict[str, float | int | bool]:
     config = load_config(config_path)
     model = build_frozen_cod_model(config)
@@ -67,7 +69,12 @@ def _predict_subset(
     model = model.to(device).eval()
     prediction_dir.mkdir(parents=True, exist_ok=True)
     cod_metrics = CODMetrics()
-    for index in range(subset_size):
+    for index in tqdm(
+        range(subset_size),
+        desc=f"predict {label}",
+        unit="image",
+        dynamic_ncols=True,
+    ):
         sample = dataset[index]
         ground_truth = _load_mask(sample["mask_path"])
         image = sample["image"].unsqueeze(0).to(device)
@@ -91,7 +98,13 @@ def _bootstrap_mean_ci(
 ) -> tuple[float, float]:
     rng = np.random.default_rng(seed)
     means = np.empty(iterations, dtype=np.float64)
-    for start in range(0, iterations, 500):
+    for start in tqdm(
+        range(0, iterations, 500),
+        desc="bootstrap confidence interval",
+        unit="batch",
+        leave=False,
+        dynamic_ncols=True,
+    ):
         count = min(500, iterations - start)
         indices = rng.integers(0, len(values), size=(count, len(values)))
         means[start : start + count] = values[indices].mean(axis=1)
@@ -237,11 +250,23 @@ def main() -> None:
         checkpoint = run / "checkpoints" / "last.pt"
         if not checkpoint.is_file():
             raise FileNotFoundError(f"missing smoke checkpoint: {checkpoint}")
-        results = _predict_subset(config, checkpoint, dataset, subset_size, predictions_root / prefix)
+        results = _predict_subset(
+            config,
+            checkpoint,
+            dataset,
+            subset_size,
+            predictions_root / prefix,
+            label,
+        )
         aggregate_rows.append({"model": label, **results})
 
     rows = []
-    for index in range(subset_size):
+    for index in tqdm(
+        range(subset_size),
+        desc="compute paired image metrics",
+        unit="image",
+        dynamic_ncols=True,
+    ):
         source = dataset.rows.iloc[index]
         ground_truth = _load_mask(source.mask_path)
         row = {
@@ -279,7 +304,13 @@ def main() -> None:
 
     selected = _select_examples(per_image, args.count)
     selected.to_csv(output / "qualitative_selection.csv", index=False)
-    for position, row in selected.iterrows():
+    for position, row in tqdm(
+        selected.iterrows(),
+        total=len(selected),
+        desc="render qualitative panels",
+        unit="panel",
+        dynamic_ncols=True,
+    ):
         predictions = [
             _load_mask(predictions_root / prefix / f"{int(row['index']):04d}.png")
             for _, prefix, _ in MODEL_SPECS

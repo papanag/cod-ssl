@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import gdown
+from tqdm.auto import tqdm
 
 from cod_ssl.data.bootstrap import (
     STANDARD_TEST_COUNTS,
@@ -52,7 +53,9 @@ def main() -> None:
         ),
         "nc4k": (NC4K_FILE_ID, root / "archives" / "nc4k.zip", (4121,)),
     }
-    for name, (file_id, archive, expected_counts) in archives.items():
+    for name, (file_id, archive, expected_counts) in tqdm(
+        archives.items(), desc="prepare test archives", unit="archive", dynamic_ncols=True
+    ):
         download(file_id, archive)
         destination = extracted / name
         try:
@@ -65,7 +68,12 @@ def main() -> None:
     manifest_dir = Path(args.manifest_dir)
     exclusions = load_exclusion_policy(args.exclusions)
     exclusion_report = {}
-    for dataset_name, expected in STANDARD_TEST_COUNTS.items():
+    for dataset_name, expected in tqdm(
+        STANDARD_TEST_COUNTS.items(),
+        desc="build test manifests",
+        unit="dataset",
+        dynamic_ncols=True,
+    ):
         image_dir, mask_dir = discover_dataset_pair(extracted, expected)
         frame = build_test_manifest(
             dataset_name, image_dir, mask_dir, manifest_dir / f"{dataset_name}.csv"

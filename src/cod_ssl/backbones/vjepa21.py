@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 
-from cod_ssl.backbones.base import FrozenBackbone
+from cod_ssl.backbones.base import DenseFeatureBatch, FrozenBackbone
 
 
 def _clean_encoder_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
@@ -19,6 +19,7 @@ def _clean_encoder_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tens
 
 
 class VJEPA21ViTB16(FrozenBackbone):
+    tubelet_size = 2
     def __init__(
         self,
         repo_dir: str | Path | None = None,
@@ -75,3 +76,56 @@ class VJEPA21ViTB16(FrozenBackbone):
                 feature = layer_tokens.transpose(1, 2).reshape(images.shape[0], -1, 24, 24)
                 features.append(feature.detach())
         return self.validate_features(images, features)
+
+    @property
+    def feature_dim(self) -> int:
+        return int(self.encoder.embed_dim)
+
+    @property
+    def patch_size(self) -> tuple[int, int]:
+        return (16, 16)
+
+    def encode_image(self, image: torch.Tensor) -> DenseFeatureBatch:
+        feature = self.forward_features(image)[-1]
+        return DenseFeatureBatch(
+            features=feature.unsqueeze(1),
+            temporal_valid=torch.ones((image.shape[0], 1), dtype=torch.bool, device=image.device),
+            spatial_size=(24, 24), source_frame_intervals=((0, 0),),
+            metadata={"pathway": "official_image", "img_temporal_dim_size": 1,
+                      "layer": self.layer_indices[-1]},
+        )
+
+    def encode_video(self, frames: torch.Tensor, temporal_valid: torch.BoolTensor) -> DenseFeatureBatch:
+        if frames.ndim != 5 or tuple(frames.shape[2:]) != (3, 384, 384):
+            raise ValueError(f"expected [B,T,3,384,384], got {tuple(frames.shape)}")
+        batch, time = frames.shape[:2]
+        if time < self.tubelet_size or time % self.tubelet_size:
+            raise ValueError(f"V-JEPA clip length must be divisible by tubelet size {self.tubelet_size}")
+        if tuple(temporal_valid.shape) != (batch, time):
+            raise ValueError("temporal_valid shape differs from video")
+        with torch.inference_mode():
+            outputs = self.encoder(frames.permute(0, 2, 1, 3, 4))
+        if not isinstance(outputs, (list, tuple)) or not outputs:
+            raise RuntimeError("V-JEPA video pathway returned no hierarchical features")
+        tokens = outputs[-1]
+        temporal_grid = time // self.tubelet_size
+        expected_tokens = temporal_grid * 24 * 24
+        if tokens.ndim != 3 or tokens.shape[1] != expected_tokens:
+            raise RuntimeError(
+                f"ambiguous V-JEPA video tokens {tuple(tokens.shape)}; expected [B,{expected_tokens},C]"
+            )
+        # Official ViT patch embedding flattens temporal, height, width in that order.
+        features = tokens.reshape(batch, temporal_grid, 24, 24, -1).permute(0, 1, 4, 2, 3).detach()
+        # A boundary tubelet remains usable when it contains at least one real
+        # observation; its exact partial coverage is retained by the source mask.
+        valid = temporal_valid.reshape(batch, temporal_grid, self.tubelet_size).any(dim=-1)
+        intervals = tuple(
+            (index * self.tubelet_size, (index + 1) * self.tubelet_size - 1)
+            for index in range(temporal_grid)
+        )
+        return DenseFeatureBatch(
+            features=features, temporal_valid=valid, spatial_size=(24, 24),
+            source_frame_intervals=intervals,
+            metadata={"pathway": "native_video", "token_order": "temporal_height_width",
+                      "tubelet_size": self.tubelet_size, "layer": self.layer_indices[-1]},
+        )

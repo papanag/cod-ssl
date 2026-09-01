@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 import torch
+from tqdm.auto import tqdm
 
 DINOV3_REPO_URL = "https://github.com/facebookresearch/dinov3.git"
 VJEPA2_REPO_URL = "https://github.com/facebookresearch/vjepa2.git"
@@ -36,17 +37,22 @@ def download(url: str, destination: Path) -> None:
     try:
         with urlopen(request) as response, temporary.open("wb") as output:
             total = int(response.headers.get("Content-Length", 0))
-            received = 0
-            while chunk := response.read(8 * 1024 * 1024):
-                output.write(chunk)
-                received += len(chunk)
-                if total:
-                    print(f"\r{destination.name}: {100 * received / total:.1f}%", end="")
+            with tqdm(
+                total=total or None,
+                desc=destination.name,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                dynamic_ncols=True,
+            ) as progress:
+                while chunk := response.read(8 * 1024 * 1024):
+                    output.write(chunk)
+                    progress.update(len(chunk))
         temporary.replace(destination)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
-    print(f"\nSaved {destination} ({destination.stat().st_size / 1024**2:.1f} MiB)")
+    print(f"Saved {destination} ({destination.stat().st_size / 1024**2:.1f} MiB)")
 
 
 def main() -> None:
@@ -66,8 +72,13 @@ def main() -> None:
     third_party = Path("/content/third_party")
     dinov3_repo = third_party / "dinov3"
     vjepa2_repo = third_party / "vjepa2"
+    progress = tqdm(total=6, desc="Colab bootstrap", unit="stage", dynamic_ncols=True)
     clone_or_update(DINOV3_REPO_URL, dinov3_repo)
+    progress.update(1)
+    progress.set_postfix(stage="DINOv3 repo", refresh=False)
     clone_or_update(VJEPA2_REPO_URL, vjepa2_repo)
+    progress.update(1)
+    progress.set_postfix(stage="V-JEPA repo", refresh=False)
 
     drive_root = Path(args.drive_root)
     weights_dir = drive_root / "checkpoints"
@@ -78,6 +89,8 @@ def main() -> None:
     else:
         print("Downloading public V-JEPA 2.1 ViT-B/16 checkpoint...")
         download(VJEPA21_URL, vjepa_weights)
+    progress.update(1)
+    progress.set_postfix(stage="V-JEPA weights", refresh=False)
     if dinov3_weights.is_file():
         print(f"Using cached DINOv3 checkpoint: {dinov3_weights}")
     else:
@@ -87,12 +100,16 @@ def main() -> None:
                 "DINOv3 is not cached. The notebook launcher must provide the approved Meta URL."
             )
         download(private_url, dinov3_weights)
+    progress.update(1)
+    progress.set_postfix(stage="DINOv3 weights", refresh=False)
 
     sample_image = Path("/content/cod_ssl_sample_image.png")
     if not sample_image.is_file():
         download(SAMPLE_IMAGE_URL, sample_image)
     else:
         print(f"Using cached smoke-test image: {sample_image}")
+    progress.update(1)
+    progress.set_postfix(stage="sample image", refresh=False)
 
     train_manifest = project_dir / "manifests" / "train_all.csv"
     if args.ensure_training_data:
@@ -141,6 +158,8 @@ def main() -> None:
     state_file.write_text(json.dumps(state, indent=2) + "\n")
     if hasattr(os, "sync"):
         os.sync()
+    progress.update(1)
+    progress.close()
     print(f"Bootstrap complete on {state['gpu']}; state: {state_file}")
 
 

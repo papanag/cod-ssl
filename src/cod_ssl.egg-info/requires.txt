@@ -19,8 +19,13 @@ pysodmetrics
 gdown
 matplotlib
 scipy
+tabulate
 
 [dev]
 pytest
 
 [notebooks]
+nbformat
+
+[vcod]
+mamba-ssm

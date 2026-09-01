@@ -1,0 +1,16 @@
+schema_version: 1
+prediction_pipeline: sigmoid_resize_minmax_1e-8_uint8_round
+metrics_backend: py_sod_metrics
+results:
+  CAMO:
+    dinov3_vitb16: {S: 0.8886, E_adapt: 0.9443, weightedF: 0.8600, MAE: 0.0368, E_mean: 0.9467, E_max: 0.9522, ms_image: 23.64}
+    vjepa21_vitb16: {S: 0.8598, E_adapt: 0.9284, weightedF: 0.8224, MAE: 0.0461, E_mean: 0.9278, E_max: 0.9349, ms_image: 51.64}
+  COD10K:
+    dinov3_vitb16: {S: 0.8725, E_adapt: 0.9519, weightedF: 0.8025, MAE: 0.0199, E_mean: 0.9465, E_max: 0.9525, ms_image: 20.90}
+    vjepa21_vitb16: {S: 0.8361, E_adapt: 0.9259, weightedF: 0.7378, MAE: 0.0263, E_mean: 0.9241, E_max: 0.9313, ms_image: 49.35}
+  CHAMELEON:
+    dinov3_vitb16: {S: 0.9089, E_adapt: 0.9722, weightedF: 0.8686, MAE: 0.0206, E_mean: 0.9548, E_max: 0.9617, ms_image: 21.30}
+    vjepa21_vitb16: {S: 0.8939, E_adapt: 0.9574, weightedF: 0.8469, MAE: 0.0239, E_mean: 0.9576, E_max: 0.9654, ms_image: 49.20}
+  NC4K:
+    dinov3_vitb16: {S: 0.8954, E_adapt: 0.9489, weightedF: 0.8588, MAE: 0.0273, E_mean: 0.9480, E_max: 0.9542, ms_image: 22.00}
+    vjepa21_vitb16: {S: 0.8735, E_adapt: 0.9327, weightedF: 0.8237, MAE: 0.0338, E_mean: 0.9333, E_max: 0.9402, ms_image: 49.81}

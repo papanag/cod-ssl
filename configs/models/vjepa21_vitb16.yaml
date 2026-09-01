@@ -1,0 +1,13 @@
+name: vjepa21_vitb16
+repository_env: VJEPA2_REPO_DIR
+checkpoint_env: VJEPA21_WEIGHTS
+checkpoint_sha256: local_required
+frozen: true
+feature_layer: 11
+input_size: [384, 384]
+patch_size: [16, 16]
+tubelet_size: 2
+native_frames: 64
+feature_dim: 768
+precision: bf16
+normalization: imagenet_mean_std
