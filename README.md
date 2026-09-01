@@ -96,7 +96,10 @@ For the controlled GPU smoke gate, run `notebooks/02_frozen_baseline_smoke_train
 The shared bootstrap downloads the official combined training archive,
 caches/extracts it in Drive, discovers an unambiguous 4,040-pair layout, and builds
 the manifest after the user explicitly acknowledges the COD10K non-commercial
-license. Notebook 02 trains each backbone on 256 images for five epochs, exports a
+license. Notebook 02 first writes a seed-42, source-proportional 256-row manifest
+(63 CAMO and 193 COD10K images), distributing the COD10K allocation across every
+filename-derived category. Both backbones train from that exact persisted manifest
+for five epochs. Each run snapshots and hashes its training manifest, exports a
 sample prediction, and reloads each checkpoint to verify finite logits and freezing.
 Its final cells also evaluate both checkpoints on all 256 smoke-training images,
 export per-image Dice/IoU/MAE/uncertainty values, aggregate COD metrics, descriptive

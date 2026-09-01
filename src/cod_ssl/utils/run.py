@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import platform
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,6 +51,11 @@ def write_run_metadata(
 ) -> None:
     run_dir = Path(run_dir)
     (run_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    train_manifest = Path(config["data"]["train_manifest"])
+    if not train_manifest.is_file():
+        raise FileNotFoundError(f"training manifest not found while recording run: {train_manifest}")
+    shutil.copy2(train_manifest, run_dir / "train_manifest.csv")
+    (run_dir / "train_manifest.sha256").write_text(file_sha256(train_manifest) + "\n")
     (run_dir / "git_commit.txt").write_text(git_commit(Path.cwd()) + "\n")
     environment = runtime_info() | {
         "platform": platform.platform(),
@@ -75,4 +81,3 @@ def write_run_metadata(
         if path and Path(path).is_file():
             upstream[key] = file_sha256(path)
     (run_dir / "upstream_versions.json").write_text(json.dumps(upstream, indent=2) + "\n")
-

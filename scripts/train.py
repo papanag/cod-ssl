@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--runs-root", default="runs")
     parser.add_argument("--resume")
     parser.add_argument("--limit-train", type=int)
+    parser.add_argument("--train-manifest")
     parser.add_argument("--epochs", type=int)
     args = parser.parse_args()
 
@@ -44,6 +45,8 @@ def main() -> None:
     run_dir = Path(args.run_dir) if args.run_dir else create_run_dir(args.runs_root, backbone_name)
     for child in ("checkpoints", "tensorboard", "predictions", "samples"):
         (run_dir / child).mkdir(parents=True, exist_ok=True)
+    if args.train_manifest:
+        config["data"]["train_manifest"] = args.train_manifest
     dataset = CODDataset(config["data"]["train_manifest"], training=True)
     if args.limit_train is not None:
         if args.limit_train < 1:
