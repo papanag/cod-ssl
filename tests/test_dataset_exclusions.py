@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from cod_ssl.data.exclusions import exclude_manifest_rows, load_exclusion_stems
+from cod_ssl.data.exclusions import exclude_manifest_rows, load_exclusion_policy
 
 
 def _validator_module():
@@ -17,11 +17,26 @@ def _validator_module():
     return module
 
 
-def test_known_overlap_policy_is_initialized_with_two_normalized_stems():
-    policy = Path(__file__).parents[1] / "configs" / "dataset_exclusions.txt"
-    assert load_exclusion_stems(policy) == {
+def test_known_overlap_policy_is_initialized_with_seven_split_aware_pairs():
+    policy = Path(__file__).parents[1] / "configs" / "dataset_exclusions.csv"
+    exclusions = load_exclusion_policy(policy)
+    shared = {
         "COD10K-CAM-1-Aquatic-3-Crab-32",
         "COD10K-CAM-2-Terrestrial-23-Cat-1506",
+    }
+    assert exclusions["train_all"] == shared | {
+        "COD10K-CAM-2-Terrestrial-26-Chameleon-1694",
+        "COD10K-CAM-2-Terrestrial-28-Deer-1796",
+        "COD10K-CAM-3-Flying-53-Bird-3205",
+        "COD10K-CAM-2-Terrestrial-32-Giraffe-1930",
+        "COD10K-CAM-2-Terrestrial-31-Gecko-1928",
+    }
+    assert exclusions["cod10k_test"] == shared | {
+        "COD10K-CAM-2-Terrestrial-31-Gecko-1892",
+        "COD10K-CAM-2-Terrestrial-28-Deer-1762",
+        "COD10K-CAM-3-Flying-65-Owl-4633",
+        "COD10K-CAM-2-Terrestrial-32-Giraffe-1932",
+        "COD10K-CAM-2-Terrestrial-31-Gecko-1895",
     }
 
 
@@ -49,7 +64,7 @@ def test_required_exclusion_fails_if_one_side_does_not_contain_both_ids():
 def test_validation_receipt_requires_exact_version_hash_counts_and_settings():
     validator = _validator_module()
     hashes = {"train_all": "abc"}
-    counts = {"train_all": 4038}
+    counts = {"train_all": 4033}
     settings = {"exclusions_sha256": "policy"}
     receipt = {
         "validation_passed": True,

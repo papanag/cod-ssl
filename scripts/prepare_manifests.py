@@ -10,7 +10,7 @@ from cod_ssl.data.manifests import create_dev_split
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--split-train", help="existing 4,038-row decontaminated train manifest to split")
+    p.add_argument("--split-train", help="existing 4,033-row decontaminated train manifest to split")
     p.add_argument("--train-dev", default="manifests/train_dev.csv")
     p.add_argument("--val-dev", default="manifests/val_dev.csv")
     p.add_argument("--seed", type=int, default=42)
@@ -20,7 +20,7 @@ def main() -> None:
     a = p.parse_args()
     if a.split_train:
         frame = pd.read_csv(a.split_train)
-        if len(frame) != 4038: raise ValueError(f"expected 4038 decontaminated training rows, got {len(frame)}")
+        if len(frame) != 4033: raise ValueError(f"expected 4033 decontaminated training rows, got {len(frame)}")
         create_dev_split(a.split_train, a.train_dev, a.val_dev, seed=a.seed)
         return
     if not all((a.source, a.images, a.masks, a.output)):

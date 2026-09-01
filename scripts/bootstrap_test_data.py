@@ -14,7 +14,7 @@ from cod_ssl.data.bootstrap import (
     discover_dataset_pair,
     extract_archive,
 )
-from cod_ssl.data.exclusions import exclude_manifest_rows, load_exclusion_stems
+from cod_ssl.data.exclusions import exclude_manifest_rows, load_exclusion_policy
 
 # Official SINet archive: CAMO-Test, COD10K-Test and CHAMELEON.
 SINET_TEST_FILE_ID = "1QEGnP9O7HbN_2tH999O3HRIsErIVYalx"
@@ -37,7 +37,7 @@ def main() -> None:
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--manifest-dir", default="manifests")
     parser.add_argument("--accept-noncommercial-license", action="store_true")
-    parser.add_argument("--exclusions", default="configs/dataset_exclusions.txt")
+    parser.add_argument("--exclusions", default="configs/dataset_exclusions.csv")
     args = parser.parse_args()
     if not args.accept_noncommercial_license:
         raise PermissionError(
@@ -63,7 +63,7 @@ def main() -> None:
             extract_archive(archive, destination)
 
     manifest_dir = Path(args.manifest_dir)
-    exclusions = load_exclusion_stems(args.exclusions)
+    exclusions = load_exclusion_policy(args.exclusions)
     exclusion_report = {}
     for dataset_name, expected in STANDARD_TEST_COUNTS.items():
         image_dir, mask_dir = discover_dataset_pair(extracted, expected)
@@ -72,7 +72,7 @@ def main() -> None:
         )
         frame, removed = exclude_manifest_rows(
             frame,
-            exclusions,
+            exclusions.get(dataset_name, set()),
             dataset_name=dataset_name,
             require_all=dataset_name == "cod10k_test",
         )

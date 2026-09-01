@@ -11,10 +11,10 @@ from typing import Any
 import pandas as pd
 from PIL import Image
 
-from cod_ssl.data.exclusions import load_exclusion_stems
+from cod_ssl.data.exclusions import load_exclusion_policy
 
-VALIDATOR_VERSION = "2.0.0"
-EXPECTED = {"train_all": 4038, "camo_test": 250, "cod10k_test": 2024,
+VALIDATOR_VERSION = "3.0.0"
+EXPECTED = {"train_all": 4033, "camo_test": 250, "cod10k_test": 2019,
             "chameleon": 76, "nc4k": 4121}
 
 
@@ -40,7 +40,9 @@ def validation_identity(manifest_dir: str | Path, exclusions: str | Path, *, ski
         "require_zero_train_test_overlap": not skip_hashes,
         "exclusions_file": str(Path(exclusions).resolve()),
         "exclusions_sha256": digest(exclusions),
-        "excluded_stems": sorted(load_exclusion_stems(exclusions)),
+        "excluded_ids_by_split": {
+            name: sorted(ids) for name, ids in load_exclusion_policy(exclusions).items()
+        },
         "expected_effective_counts": EXPECTED,
     }
     return manifest_hashes, counts, settings
@@ -58,7 +60,7 @@ def receipt_matches(receipt: dict[str, Any], manifest_hashes, counts, settings) 
 
 def validate(manifest_dir: str | Path, exclusions: str | Path, *, skip_hashes: bool = False):
     manifest_dir = Path(manifest_dir)
-    exclusion_stems = load_exclusion_stems(exclusions)
+    exclusion_policy = load_exclusion_policy(exclusions)
     manifest_hashes, counts, settings = validation_identity(
         manifest_dir, exclusions, skip_hashes=skip_hashes
     )
@@ -69,7 +71,8 @@ def validate(manifest_dir: str | Path, exclusions: str | Path, *, skip_hashes: b
     test_hashes: dict[str, str] = {}
     for name, expected in EXPECTED.items():
         frame = pd.read_csv(manifest_dir / f"{name}.csv")
-        present = sorted(set(frame.id.astype(str).map(lambda value: Path(value).stem)) & exclusion_stems)
+        excluded = exclusion_policy.get(name, set())
+        present = sorted(set(frame.id.astype(str).map(lambda value: Path(value).stem)) & excluded)
         if present:
             raise ValueError(f"{name} still contains excluded overlap IDs: {present}")
         print(f"Validating {name}: {expected} pairs", flush=True)
@@ -100,7 +103,7 @@ def validate(manifest_dir: str | Path, exclusions: str | Path, *, skip_hashes: b
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest-dir", default="manifests")
-    parser.add_argument("--exclusions", default="configs/dataset_exclusions.txt")
+    parser.add_argument("--exclusions", default="configs/dataset_exclusions.csv")
     parser.add_argument("--receipt")
     parser.add_argument("--skip-hashes", action="store_true")
     parser.add_argument("--force", action="store_true")

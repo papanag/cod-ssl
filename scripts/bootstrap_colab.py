@@ -107,7 +107,7 @@ def main() -> None:
                 str(project_dir / "scripts" / "bootstrap_training_data.py"),
                 "--data-root", str(drive_root / "data"),
                 "--manifest", str(train_manifest),
-                "--exclusions", str(project_dir / "configs" / "dataset_exclusions.txt"),
+                "--exclusions", str(project_dir / "configs" / "dataset_exclusions.csv"),
                 "--accept-noncommercial-license",
             ],
             cwd=project_dir,

@@ -1,0 +1,8 @@
+train_id,test_id,detection
+COD10K-CAM-1-Aquatic-3-Crab-32,COD10K-CAM-1-Aquatic-3-Crab-32,known_filename_overlap
+COD10K-CAM-2-Terrestrial-23-Cat-1506,COD10K-CAM-2-Terrestrial-23-Cat-1506,known_filename_overlap
+COD10K-CAM-2-Terrestrial-26-Chameleon-1694,COD10K-CAM-2-Terrestrial-31-Gecko-1892,sha256_match
+COD10K-CAM-2-Terrestrial-28-Deer-1796,COD10K-CAM-2-Terrestrial-28-Deer-1762,sha256_match
+COD10K-CAM-3-Flying-53-Bird-3205,COD10K-CAM-3-Flying-65-Owl-4633,sha256_match
+COD10K-CAM-2-Terrestrial-32-Giraffe-1930,COD10K-CAM-2-Terrestrial-32-Giraffe-1932,sha256_match
+COD10K-CAM-2-Terrestrial-31-Gecko-1928,COD10K-CAM-2-Terrestrial-31-Gecko-1895,sha256_match

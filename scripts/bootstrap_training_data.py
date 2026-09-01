@@ -12,7 +12,7 @@ from cod_ssl.data.bootstrap import (
     discover_standard_training_pair,
     extract_archive,
 )
-from cod_ssl.data.exclusions import exclude_manifest_rows, load_exclusion_stems
+from cod_ssl.data.exclusions import exclude_manifest_rows, load_exclusion_policy
 
 OFFICIAL_TRAIN_FILE_ID = "1D9bf1KeeCJsxxri6d2qAC7z6O1X_fxpt"
 
@@ -22,7 +22,7 @@ def main() -> None:
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--accept-noncommercial-license", action="store_true")
-    parser.add_argument("--exclusions", default="configs/dataset_exclusions.txt")
+    parser.add_argument("--exclusions", default="configs/dataset_exclusions.csv")
     args = parser.parse_args()
     if not args.accept_noncommercial_license:
         raise PermissionError(
@@ -46,7 +46,7 @@ def main() -> None:
         extract_archive(archive, extracted)
         image_dir, mask_dir = discover_standard_training_pair(extracted)
     frame = build_standard_train_manifest(image_dir, mask_dir, args.manifest)
-    exclusions = load_exclusion_stems(args.exclusions)
+    exclusions = load_exclusion_policy(args.exclusions)["train_all"]
     frame, removed = exclude_manifest_rows(
         frame, exclusions, dataset_name="train_all", require_all=True
     )
