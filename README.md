@@ -41,8 +41,13 @@ Create the deterministic, source-stratified 90/10 development split only from th
 validated training manifest with `python scripts/prepare_manifests.py
 --split-train manifests/train_all.csv`.
 
-The validator enforces all five dataset counts, opens every pair, checks dimensions,
-rejects duplicate paths, and by default hashes images to detect train/test overlap.
+The two COD10K files listed in `configs/dataset_exclusions.txt` are documented
+duplicates between the official train and test splits. Manifest bootstrapping removes
+both IDs from both sides, producing 4,038 training and 2,024 COD10K-Test rows. The
+validator requires those effective counts, rejects excluded IDs and duplicate paths,
+opens every pair, and hashes images to require zero remaining train/test overlap.
+Notebook 03 stores a versioned receipt in Drive containing manifest hashes, effective
+counts, settings, and completion time; an exact match skips repeat full validation.
 
 ## Colab workflow
 
@@ -97,7 +102,7 @@ The shared bootstrap downloads the official combined training archive,
 caches/extracts it in Drive, discovers an unambiguous 4,040-pair layout, and builds
 the manifest after the user explicitly acknowledges the COD10K non-commercial
 license. Notebook 02 first writes a seed-42, source-proportional 256-row manifest
-(63 CAMO and 193 COD10K images), distributing the COD10K allocation across every
+(63 CAMO and 193 COD10K images) from the decontaminated 4,038-image pool, distributing the COD10K allocation across every
 filename-derived category. Both backbones train from that exact persisted manifest
 for five epochs. Each run snapshots and hashes its training manifest, exports a
 sample prediction, and reloads each checkpoint to verify finite logits and freezing.

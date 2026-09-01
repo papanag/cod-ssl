@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import gdown
@@ -13,6 +14,7 @@ from cod_ssl.data.bootstrap import (
     discover_dataset_pair,
     extract_archive,
 )
+from cod_ssl.data.exclusions import exclude_manifest_rows, load_exclusion_stems
 
 # Official SINet archive: CAMO-Test, COD10K-Test and CHAMELEON.
 SINET_TEST_FILE_ID = "1QEGnP9O7HbN_2tH999O3HRIsErIVYalx"
@@ -35,6 +37,7 @@ def main() -> None:
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--manifest-dir", default="manifests")
     parser.add_argument("--accept-noncommercial-license", action="store_true")
+    parser.add_argument("--exclusions", default="configs/dataset_exclusions.txt")
     args = parser.parse_args()
     if not args.accept_noncommercial_license:
         raise PermissionError(
@@ -60,12 +63,25 @@ def main() -> None:
             extract_archive(archive, destination)
 
     manifest_dir = Path(args.manifest_dir)
+    exclusions = load_exclusion_stems(args.exclusions)
+    exclusion_report = {}
     for dataset_name, expected in STANDARD_TEST_COUNTS.items():
         image_dir, mask_dir = discover_dataset_pair(extracted, expected)
         frame = build_test_manifest(
             dataset_name, image_dir, mask_dir, manifest_dir / f"{dataset_name}.csv"
         )
+        frame, removed = exclude_manifest_rows(
+            frame,
+            exclusions,
+            dataset_name=dataset_name,
+            require_all=dataset_name == "cod10k_test",
+        )
+        frame.to_csv(manifest_dir / f"{dataset_name}.csv", index=False)
+        exclusion_report[dataset_name] = removed
         print(f"{dataset_name}: {len(frame)} pairs -> {manifest_dir / f'{dataset_name}.csv'}")
+    (manifest_dir / "test_exclusions.json").write_text(
+        json.dumps(exclusion_report, indent=2) + "\n"
+    )
 
 
 if __name__ == "__main__":
