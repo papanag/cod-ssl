@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 
+from cod_ssl.data.bootstrap import merge_tree_parallel
 from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense, verify_moca_mask_dense
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
@@ -50,6 +51,24 @@ def test_download_keeps_incomplete_part_for_next_resume(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="rerun to resume"):
         module._download("file-id", destination, expected_bytes=99)
     assert destination.with_suffix(".zip.part").read_bytes() == b"partial"
+
+
+def test_parallel_tree_merge_copies_missing_and_reuses_matching_files(tmp_path):
+    source, destination = tmp_path / "local", tmp_path / "persistent"
+    (source / "nested").mkdir(parents=True)
+    (source / "nested" / "new.jpg").write_bytes(b"new")
+    (source / "same.jpg").write_bytes(b"same")
+    destination.mkdir()
+    (destination / "same.jpg").write_bytes(b"same")
+    (destination / "nested").mkdir()
+    (destination / "nested" / "new.jpg").write_bytes(b"bad-size")
+
+    report = merge_tree_parallel(source, destination, workers=2)
+
+    assert report == {"files": 2, "copied": 1, "reused": 1}
+    assert (destination / "nested" / "new.jpg").read_bytes() == b"new"
+    assert (destination / "same.jpg").read_bytes() == b"same"
+    assert not list(destination.rglob("*.part"))
 
 
 def _original_sequence(root: Path, sequence_id: str, count: int = 21) -> Path:

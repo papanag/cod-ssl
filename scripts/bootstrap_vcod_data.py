@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import urllib.request
 import zipfile
 from datetime import UTC, datetime
@@ -13,7 +14,7 @@ from pathlib import Path
 import gdown
 from tqdm.auto import tqdm
 
-from cod_ssl.data.bootstrap import extract_archive, extract_zip_prefixes
+from cod_ssl.data.bootstrap import extract_archive, extract_zip_prefixes, merge_tree_parallel
 from cod_ssl.data.camotion_attributes import parse_camotion_attributes
 from cod_ssl.data.camotion_bootstrap import (
     build_camotion_manifest,
@@ -123,7 +124,40 @@ def _download_http(url: str, destination: Path) -> None:
     temporary.replace(destination)
 
 
-def _ensure_extracted(archive: Path, destination: Path, release_kind: str) -> None:
+def _extract_staged(
+    archive: Path,
+    destination: Path,
+    staging_root: Path | None,
+    *,
+    prefixes: tuple[str, ...] | None = None,
+    required_path_parts: set[str] | None = None,
+) -> None:
+    if staging_root is None:
+        if prefixes is None:
+            extract_archive(archive, destination)
+        else:
+            extract_zip_prefixes(
+                archive, destination, prefixes,
+                required_path_parts=required_path_parts,
+            )
+        return
+    staged = staging_root / destination.name
+    print(f"Extracting {archive.name} on local storage: {staged}")
+    if prefixes is None:
+        extract_archive(archive, staged)
+    else:
+        extract_zip_prefixes(
+            archive, staged, prefixes,
+            required_path_parts=required_path_parts,
+        )
+    report = merge_tree_parallel(staged, destination)
+    print(f"Persistent copy complete: {report}")
+    shutil.rmtree(staged)
+
+
+def _ensure_extracted(
+    archive: Path, destination: Path, release_kind: str, staging_root: Path | None,
+) -> None:
     expected = ("TrainDataset_per_sq", "TestDataset_per_sq")
     try:
         for name in expected:
@@ -134,16 +168,21 @@ def _ensure_extracted(archive: Path, destination: Path, release_kind: str) -> No
     except RuntimeError:
         pass
     print(f"Extracting {archive} to {destination}...")
-    extract_archive(archive, destination)
+    _extract_staged(archive, destination, staging_root)
 
 
-def _ensure_original_moca_extracted(archive: Path, destination: Path) -> None:
+def _ensure_original_moca_extracted(
+    archive: Path, destination: Path, staging_root: Path | None,
+) -> None:
     marker = destination / ".selected_extraction_complete"
     if marker.is_file() and any(path.is_dir() for path in destination.rglob("JPEGImages")):
         return
     if not zipfile.is_zipfile(archive):
         raise ValueError(f"official Original MoCA download is not a ZIP archive: {archive}")
-    extract_zip_prefixes(archive, destination, ("MoCA/JPEGImages/", "MoCA/Annotations/"))
+    _extract_staged(
+        archive, destination, staging_root,
+        prefixes=("MoCA/JPEGImages/", "MoCA/Annotations/"),
+    )
     if not any(path.is_dir() for path in destination.rglob("JPEGImages")):
         raise ValueError("Original MoCA archive did not expose the expected JPEGImages tree")
     marker.write_text("complete\n")
@@ -172,7 +211,9 @@ def _download_metadata(url: str, destination: Path, expected_sha256: str) -> Non
     temporary.replace(destination)
 
 
-def _ensure_camotion_extracted(archive: Path, destination: Path) -> None:
+def _ensure_camotion_extracted(
+    archive: Path, destination: Path, staging_root: Path | None,
+) -> None:
     marker = destination / ".selected_extraction_complete"
     if marker.is_file():
         discover_camotion_roots(destination)
@@ -183,8 +224,8 @@ def _ensure_camotion_extracted(archive: Path, destination: Path) -> None:
         "CAMotion/CAMotion/TrainDataset_per_sq/",
         "CAMotion/CAMotion/TestDataset_per_sq/",
     )
-    extract_zip_prefixes(
-        archive, destination, prefixes,
+    _extract_staged(
+        archive, destination, staging_root, prefixes=prefixes,
         required_path_parts={"Imgs", "GT", "Bbox", "BBox"},
     )
     discover_camotion_roots(destination)
@@ -219,7 +260,7 @@ def _bootstrap_camotion(args, root: Path, manifest_dir: Path) -> dict:
     progress.update(1)
     _download_metadata(CAMOTION_ATTRIBUTES_URL, metadata, CAMOTION_ATTRIBUTES_SHA256)
     progress.update(1)
-    _ensure_camotion_extracted(archive, extracted)
+    _ensure_camotion_extracted(archive, extracted, args.staging_root)
     progress.update(1)
     duplicate_report = verify_camotion_flattened_duplicates(archive)
     attributes = parse_camotion_attributes(metadata.read_text().splitlines())
@@ -273,6 +314,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--manifest-dir", required=True)
+    parser.add_argument(
+        "--staging-root", type=Path,
+        help="Fast local directory used before a resumable parallel copy to persistent storage",
+    )
     parser.add_argument("--validation-fraction", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-archive-sha256", action="store_true")
@@ -289,6 +334,8 @@ def main() -> None:
     root = Path(args.data_root)
     archives = root / "archives"
     manifest_dir = Path(args.manifest_dir)
+    if args.staging_root is not None:
+        args.staging_root.mkdir(parents=True, exist_ok=True)
     if "moca_mask_dense" not in args.datasets:
         receipt = _bootstrap_camotion(args, root, manifest_dir)
         print(json.dumps(receipt, indent=2))
@@ -302,9 +349,13 @@ def main() -> None:
     progress.update(1)
     _download_http(MOCA_RELEASES["original"]["url"], original_archive)
     progress.update(1)
-    _ensure_extracted(manual_archive, releases / "moca_mask_public", "manual")
+    _ensure_extracted(
+        manual_archive, releases / "moca_mask_public", "manual", args.staging_root,
+    )
     progress.update(1)
-    _ensure_original_moca_extracted(original_archive, releases / "original_moca")
+    _ensure_original_moca_extracted(
+        original_archive, releases / "original_moca", args.staging_root,
+    )
     progress.update(1)
     build_summary = build_moca_mask_dense(
         "configs/datasets/moca_mask_dense.yaml",

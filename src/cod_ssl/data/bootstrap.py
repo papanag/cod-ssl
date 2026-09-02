@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import tarfile
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from shutil import copyfile
 
 import pandas as pd
 from tqdm.auto import tqdm
@@ -84,6 +86,36 @@ def extract_zip_prefixes(
             members, desc=f"extract selected {archive.name}", unit="file", dynamic_ncols=True
         ):
             handle.extract(member, destination)
+
+
+def merge_tree_parallel(
+    source: str | Path, destination: str | Path, *, workers: int = 16,
+) -> dict[str, int]:
+    """Copy a local tree into persistent storage, safely resuming missing files."""
+    source, destination = Path(source), Path(destination)
+    files = [path for path in source.rglob("*") if path.is_file()]
+    for directory in (path for path in source.rglob("*") if path.is_dir()):
+        (destination / directory.relative_to(source)).mkdir(parents=True, exist_ok=True)
+    destination.mkdir(parents=True, exist_ok=True)
+
+    def copy_one(path: Path) -> bool:
+        target = destination / path.relative_to(source)
+        if target.is_file() and target.stat().st_size == path.stat().st_size:
+            return False
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(target.suffix + ".part")
+        copyfile(path, temporary)
+        temporary.replace(target)
+        return True
+
+    copied = 0
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for changed in tqdm(
+            executor.map(copy_one, files), total=len(files),
+            desc="copy to persistent storage", unit="file", dynamic_ncols=True,
+        ):
+            copied += int(changed)
+    return {"files": len(files), "copied": copied, "reused": len(files) - copied}
 
 
 def _files_by_stem(directory: Path) -> dict[str, Path]:

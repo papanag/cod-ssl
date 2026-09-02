@@ -84,6 +84,8 @@ def test_vcod_notebooks_are_thin_valid_colab_orchestrators():
         )
     assert "scripts/inspect_dataset.py" in sources[names[0]]
     assert "scripts/bootstrap_vcod_data.py" in sources[names[0]]
+    assert "--staging-root" in sources[names[0]]
+    assert "/content/vcod_extract_staging" in sources[names[0]]
     assert "CAMOTION_MANIFEST" in sources[names[0]]
     assert "accept-camotion-academic-license" in sources[names[0]]
     assert "vcod_validation_approval.json" in sources[names[0]]
