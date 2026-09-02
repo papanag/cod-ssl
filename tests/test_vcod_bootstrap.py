@@ -9,6 +9,7 @@ from PIL import Image
 
 from cod_ssl.data.bootstrap import merge_tree_parallel
 from cod_ssl.data.clip_sampler import ClipSpec
+from cod_ssl.data.preprocessing.moca_release_inventory import inventory_moca_mask
 from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense, verify_moca_mask_dense
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
 
@@ -69,6 +70,21 @@ def test_parallel_tree_merge_copies_missing_and_reuses_matching_files(tmp_path):
     assert (destination / "nested" / "new.jpg").read_bytes() == b"new"
     assert (destination / "same.jpg").read_bytes() == b"same"
     assert not list(destination.rglob("*.part"))
+
+
+def test_moca_inventory_audits_official_grayscale_masks_without_rejecting_them(tmp_path):
+    _, mask_root = _fixture(tmp_path)
+    grayscale = mask_root / "MoCA_Video/TrainDataset_per_sq/snow_leopard_4.1/GT/00000.png"
+    Image.new("L", (8, 6), 128).save(grayscale)
+
+    with pytest.raises(ValueError, match="non-binary MoCA-Mask target"):
+        inventory_moca_mask(mask_root, verify_counts=False, require_binary_masks=True)
+    _, quality = inventory_moca_mask(mask_root, verify_counts=False, require_binary_masks=False)
+
+    audited = next(row for row in quality if row["sequence_id"] == "snow_leopard_4.1"
+                   and row["frame_number"] == 0)
+    assert audited["values"] == [128]
+    assert audited["binary"] is False
 
 
 def _original_sequence(root: Path, sequence_id: str, count: int = 21) -> Path:

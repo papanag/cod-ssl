@@ -21,6 +21,9 @@ MoCA sign-off must record both release hashes, build ID, preprocessing-manifest
 hash, derived dense-frame count, boundary policy, reviewer/date, discrepancies,
 and the limitation that the derived view is not an exact reconstruction of the
 unavailable paper-described 22,939-frame package.
+The official mask PNGs are retained byte-for-byte and their stored grayscale
+values are recorded in `mask_quality.csv`; training and evaluation use the
+repository-wide nonzero-foreground rule rather than requiring 0/255 storage.
 
 CAMotion sign-off must record the archive SHA-256, pinned attribute-file SHA-256,
 official repository commit, exact validation IDs, discrepancies, exclusions,

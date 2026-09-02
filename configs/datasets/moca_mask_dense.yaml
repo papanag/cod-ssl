@@ -8,7 +8,10 @@ dataset_build:
   verify_content: sha256_targets
   allow_terminal_non_stride5_target: true
   require_consecutive_original_frames: true
-  require_binary_masks: true
+  # Official MoCA-Mask PNGs may use intermediate grayscale values. Runtime
+  # supervision and evaluation consistently define foreground as value > 0.
+  require_binary_masks: false
+  mask_foreground_rule: nonzero
   validation_fraction: 0.1
   validation_seed: 42
   overwrite: false

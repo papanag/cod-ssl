@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -109,6 +110,7 @@ def inventory_moca_mask(
     expected_targets: int = 4_691,
     verify_counts: bool = True,
     require_binary_masks: bool = True,
+    mask_quality_workers: int = 16,
 ) -> tuple[dict[str, MaskSequence], list[dict[str, object]]]:
     root = Path(root).resolve()
     partitions = {
@@ -117,24 +119,29 @@ def inventory_moca_mask(
     }
     sequences: dict[str, MaskSequence] = {}
     mask_quality: list[dict[str, object]] = []
-    for split, partition in partitions.items():
-        directories = sorted(path for path in partition.iterdir() if path.is_dir())
-        for directory in tqdm(directories, desc=f"inventory MoCA-Mask {split}", unit="sequence", dynamic_ncols=True):
-            if directory.name in sequences:
-                raise ValueError(f"MoCA-Mask sequence occurs in both official splits: {directory.name}")
-            images, masks = numeric_files(directory / "Imgs"), numeric_files(directory / "GT")
-            if images.keys() != masks.keys():
-                raise ValueError(f"MoCA-Mask RGB/GT keys differ: {directory.name}")
-            ids = list(images)
-            exceptions = tuple((left, right) for left, right in zip(ids, ids[1:]) if right - left != 5)
-            for number, mask_path in masks.items():
-                quality = _mask_quality(mask_path) | {"sequence_id": directory.name, "frame_number": number}
-                if require_binary_masks and not quality["binary"]:
-                    raise ValueError(f"non-binary MoCA-Mask target: {mask_path}")
-                mask_quality.append(quality)
-            sequences[directory.name] = MaskSequence(
-                directory.name, split, directory.resolve(), images, masks, exceptions
-            )
+    with ThreadPoolExecutor(max_workers=mask_quality_workers) as executor:
+        for split, partition in partitions.items():
+            directories = sorted(path for path in partition.iterdir() if path.is_dir())
+            for directory in tqdm(
+                directories, desc=f"inventory MoCA-Mask {split}", unit="sequence",
+                dynamic_ncols=True,
+            ):
+                if directory.name in sequences:
+                    raise ValueError(f"MoCA-Mask sequence occurs in both official splits: {directory.name}")
+                images, masks = numeric_files(directory / "Imgs"), numeric_files(directory / "GT")
+                if images.keys() != masks.keys():
+                    raise ValueError(f"MoCA-Mask RGB/GT keys differ: {directory.name}")
+                ids = list(images)
+                exceptions = tuple((left, right) for left, right in zip(ids, ids[1:]) if right - left != 5)
+                quality_rows = executor.map(_mask_quality, masks.values())
+                for (number, mask_path), quality in zip(masks.items(), quality_rows):
+                    quality |= {"sequence_id": directory.name, "frame_number": number}
+                    if require_binary_masks and not quality["binary"]:
+                        raise ValueError(f"non-binary MoCA-Mask target: {mask_path}")
+                    mask_quality.append(quality)
+                sequences[directory.name] = MaskSequence(
+                    directory.name, split, directory.resolve(), images, masks, exceptions
+                )
     actual = {
         "train_sequences": sum(sequence.official_split == "train" for sequence in sequences.values()),
         "test_sequences": sum(sequence.official_split == "test" for sequence in sequences.values()),
