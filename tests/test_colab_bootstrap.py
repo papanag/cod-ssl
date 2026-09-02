@@ -93,6 +93,7 @@ def test_vcod_notebooks_are_thin_valid_colab_orchestrators():
     assert "vcod_validation_approval.json" in sources[names[0]]
     assert "[dev,notebooks,vcod]" not in sources[names[0]]
     assert "scripts/train_probe.py" in sources[names[1]]
+    assert "sys.path.insert(0, project_src)" in sources[names[1]]
     assert "SYSTEM == 'DT'" in sources[names[1]]
     assert "--resume" in sources[names[1]]
     assert "RUN_KIND == 'tuning'" in sources[names[1]]
