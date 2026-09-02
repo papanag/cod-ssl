@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import tempfile
 from collections import Counter
 from itertools import pairwise
 from pathlib import Path
@@ -13,11 +15,79 @@ import pandas as pd
 from PIL import Image, ImageDraw
 from tqdm.auto import tqdm
 
-from cod_ssl.data.video_manifest import REQUIRED_COLUMNS, assert_disjoint_video_splits
 from cod_ssl.data.camotion_attributes import ATTRIBUTE_CODES
 from cod_ssl.data.clip_sampler import ClipSampler, ClipSpec
+from cod_ssl.data.video_manifest import REQUIRED_COLUMNS, assert_disjoint_video_splits
 from cod_ssl.utils.config import load_config
 from cod_ssl.utils.run import file_sha256
+
+INSPECTOR_VERSION = 2
+
+
+def _write_json_atomic(path: Path, value: dict) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n")
+    temporary.replace(path)
+
+
+def _inspection_identity(
+    config_path: Path, manifest: Path, regime: str | None, seed: int,
+) -> dict:
+    return {
+        "inspector_version": INSPECTOR_VERSION,
+        "inspector_sha256": file_sha256(__file__),
+        "config": str(config_path.resolve()),
+        "config_sha256": file_sha256(config_path),
+        "manifest": str(manifest),
+        "manifest_sha256": file_sha256(manifest),
+        "regime": regime,
+        "seed": seed,
+    }
+
+
+def _required_artifacts(dataset: str) -> tuple[str, ...]:
+    common = ("report.json", "report.md", "random_overlays.png")
+    if dataset != "camotion":
+        return common
+    return common + (
+        "summary.json", "summary.md", "split_manifest.json", "target_manifest.jsonl",
+        "attribute_manifest.json", "attribute_counts.csv", "attribute_cooccurrence.csv",
+        "unmatched_sequences.json",
+    )
+
+
+def _cached_inspection(output: Path, identity: dict, dataset: str) -> dict | None:
+    receipt_path = output / "inspection_receipt.json"
+    if not receipt_path.is_file():
+        return None
+    try:
+        receipt = json.loads(receipt_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    artifacts = _required_artifacts(dataset)
+    if (
+        receipt.get("complete") is not True
+        or receipt.get("identity") != identity
+        or not all((output / name).is_file() for name in artifacts)
+    ):
+        return None
+    print(f"Using cached dataset inspection: {receipt_path}")
+    return json.loads((output / "report.json").read_text())
+
+
+def _publish_inspection(temporary: Path, output: Path) -> None:
+    backup = output.with_name(output.name + ".previous")
+    if backup.exists():
+        shutil.rmtree(backup)
+    if output.exists():
+        output.replace(backup)
+    try:
+        temporary.replace(output)
+    except Exception:
+        if backup.exists() and not output.exists():
+            backup.replace(output)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
 
 
 def _resolve_manifest(config: dict, explicit: str | None) -> Path:
@@ -358,8 +428,10 @@ def main() -> None:
     parser.add_argument("--config", required=True); parser.add_argument("--manifest")
     parser.add_argument("--regime"); parser.add_argument("--output", required=True)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    loaded = load_config(args.config)
+    config_path = Path(args.config)
+    loaded = load_config(config_path)
     config = loaded.get("dataset", loaded)
     if "clip" in loaded:
         config = config | {"clip": loaded["clip"]}
@@ -367,15 +439,35 @@ def main() -> None:
         config = config | {"expected": loaded["dataset_build"].get("expected", {})}
     manifest = _resolve_manifest(config, args.manifest)
     if config["name"] == "moca_mask_dense":
-        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import verify_moca_mask_dense
+        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import (
+            verify_moca_mask_dense,
+        )
         if manifest.name != "runtime_manifest.csv" or manifest.parent.name != "manifest":
             raise ValueError("dense MoCA inspection requires a moca_mask_dense_v1 runtime manifest")
-        verify_moca_mask_dense(manifest.parent.parent)
+        verify_moca_mask_dense(manifest.parent.parent, verify_linked_targets=False)
+    output = Path(args.output).resolve()
+    identity = _inspection_identity(config_path, manifest, args.regime, args.seed)
+    cached = None if args.force else _cached_inspection(output, identity, config["name"])
+    if cached is not None:
+        print(json.dumps(cached, indent=2))
+        return
     frame = pd.read_csv(manifest)
     if args.regime and "regime" in frame: frame = frame[frame.regime.fillna("default") == args.regime]
-    report = inspect(frame, manifest, Path(args.output), args.seed)
-    if config["name"] == "camotion":
-        _camotion_artifacts(frame, Path(args.output), args.seed, config)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
+    try:
+        report = inspect(frame, manifest, temporary, args.seed)
+        if config["name"] == "camotion":
+            _camotion_artifacts(frame, temporary, args.seed, config)
+        _write_json_atomic(temporary / "inspection_receipt.json", {
+            "complete": True,
+            "identity": identity,
+            "artifacts": list(_required_artifacts(config["name"])),
+        })
+        _publish_inspection(temporary, output)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
     print(json.dumps(report, indent=2))
 
 

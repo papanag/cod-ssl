@@ -2,6 +2,7 @@ import importlib.util
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -11,7 +12,10 @@ from cod_ssl.data.bootstrap import merge_tree_parallel
 from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.preprocessing import prepare_moca_mask_dense as moca_dense
 from cod_ssl.data.preprocessing.moca_release_inventory import inventory_moca_mask
-from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense, verify_moca_mask_dense
+from cod_ssl.data.preprocessing.prepare_moca_mask_dense import (
+    build_moca_mask_dense,
+    verify_moca_mask_dense,
+)
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
 
 
@@ -53,6 +57,53 @@ def test_download_keeps_incomplete_part_for_next_resume(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="rerun to resume"):
         module._download("file-id", destination, expected_bytes=99)
     assert destination.with_suffix(".zip.part").read_bytes() == b"partial"
+
+
+def test_cached_camotion_receipt_migrates_without_rescanning_release(tmp_path, monkeypatch):
+    module = _bootstrap_module()
+    root = tmp_path / "data"
+    manifest_dir = tmp_path / "manifests"
+    archive = root / "archives" / "CAMotion.zip"
+    metadata = root / "metadata" / "attributes.txt"
+    extracted = root / "camotion"
+    archive.parent.mkdir(parents=True)
+    metadata.parent.mkdir(parents=True)
+    extracted.mkdir(parents=True)
+    archive.write_bytes(b"archive")
+    metadata.write_bytes(b"metadata")
+    (extracted / ".selected_extraction_complete").write_text("complete\n")
+    manifest_dir.mkdir()
+    manifest = manifest_dir / "camotion.csv"
+    manifest.write_text("frame_id\n0\n")
+    split_manifest = manifest.with_suffix(".splits.json")
+    split_manifest.write_text(json.dumps({"seed": 42, "validation_fraction": 0.1}))
+    attributes = manifest_dir / "camotion.attributes.json"
+    attributes.write_text("{}\n")
+    monkeypatch.setattr(module, "CAMOTION_ARCHIVE_BYTES", len(b"archive"))
+    monkeypatch.setattr(module, "CAMOTION_ATTRIBUTES_SHA256", module.file_sha256(metadata))
+    receipt_path = manifest.with_suffix(".bootstrap.json")
+    receipt_path.write_text(json.dumps({
+        "schema_version": 1,
+        "archive": {"bytes": len(b"archive")},
+        "metadata": {
+            "repository_commit": module.CAMOTION_METADATA_COMMIT,
+            "sha256": module.CAMOTION_ATTRIBUTES_SHA256,
+        },
+        "manifest_sha256": module.file_sha256(manifest),
+        "split_manifest_sha256": module.file_sha256(split_manifest),
+        "attribute_manifest_sha256": module.file_sha256(attributes),
+        "release_profile": "camotion_public_stride5_v1",
+        "rows": 1,
+    }))
+
+    receipt = module._cached_camotion_receipt(
+        SimpleNamespace(seed=42, validation_fraction=0.1),
+        manifest_dir, archive, metadata, extracted,
+    )
+
+    assert receipt is not None
+    assert receipt["bootstrap_version"] == module.CAMOTION_BOOTSTRAP_VERSION
+    assert json.loads(receipt_path.read_text())["schema_version"] == 2
 
 
 def test_parallel_tree_merge_copies_missing_and_reuses_matching_files(tmp_path):

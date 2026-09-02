@@ -14,15 +14,19 @@ from pathlib import Path
 import gdown
 from tqdm.auto import tqdm
 
-from cod_ssl.data.bootstrap import extract_archive, extract_zip_prefixes, merge_tree_parallel
+from cod_ssl.data.bootstrap import (
+    extract_archive,
+    extract_zip_prefixes,
+    merge_tree_parallel,
+)
 from cod_ssl.data.camotion_attributes import parse_camotion_attributes
 from cod_ssl.data.camotion_bootstrap import (
     build_camotion_manifest,
     discover_camotion_roots,
     verify_camotion_flattened_segmentation_duplicates,
 )
-from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense
 from cod_ssl.data.preprocessing.moca_manifest_schema import write_checksums, write_json
+from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense
 from cod_ssl.utils.run import file_sha256
 
 MOCA_RELEASES = {
@@ -46,6 +50,14 @@ CAMOTION_ATTRIBUTES_URL = (
     f"https://raw.githubusercontent.com/Garyson1204/CAMotion/"
     f"{CAMOTION_METADATA_COMMIT}/attributes_per_sequence.txt"
 )
+CAMOTION_BOOTSTRAP_VERSION = 2
+
+
+def _write_json_atomic(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2) + "\n")
+    temporary.replace(path)
 
 
 def sha256_with_progress(path: str | Path) -> str:
@@ -108,7 +120,7 @@ def _download_http(url: str, destination: Path) -> None:
     temporary = destination.with_suffix(destination.suffix + ".part")
     offset = temporary.stat().st_size if temporary.is_file() else 0
     request = urllib.request.Request(url, headers={"Range": f"bytes={offset}-"} if offset else {})
-    with urllib.request.urlopen(request) as response:  # noqa: S310 - official pinned HTTPS dataset URL
+    with urllib.request.urlopen(request) as response:
         resumed = offset > 0 and response.status == 206
         if offset and not resumed:
             offset = 0
@@ -193,7 +205,7 @@ def _download_metadata(url: str, destination: Path, expected_sha256: str) -> Non
         print(f"Using pinned CAMotion metadata: {destination}")
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url) as response:  # noqa: S310 - pinned HTTPS URL + checksum
+    with urllib.request.urlopen(url) as response:
         total = int(response.headers.get("Content-Length", 0)) or None
         digest = hashlib.sha256()
         temporary = destination.with_suffix(destination.suffix + ".part")
@@ -246,6 +258,61 @@ def _cached_archive_sha256(archive: Path, cache: Path, key: str) -> str:
     return digest
 
 
+def _cached_camotion_receipt(
+    args, manifest_dir: Path, archive: Path, metadata: Path, extracted: Path,
+) -> dict | None:
+    """Return (and migrate) a complete CAMotion receipt without rescanning the release."""
+    manifest = manifest_dir / "camotion.csv"
+    split_manifest = manifest.with_suffix(".splits.json")
+    attribute_manifest = manifest_dir / "camotion.attributes.json"
+    receipt_path = manifest.with_suffix(".bootstrap.json")
+    required = (
+        archive, metadata, extracted / ".selected_extraction_complete",
+        manifest, split_manifest, attribute_manifest, receipt_path,
+    )
+    if not all(path.is_file() for path in required):
+        return None
+    try:
+        receipt = json.loads(receipt_path.read_text())
+        split_report = json.loads(split_manifest.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    settings = {
+        "seed": args.seed,
+        "validation_fraction": args.validation_fraction,
+        "metadata_commit": CAMOTION_METADATA_COMMIT,
+        "metadata_sha256": CAMOTION_ATTRIBUTES_SHA256,
+        "release_profile": "camotion_public_stride5_v1",
+    }
+    recorded_settings = receipt.get("build_settings") or {
+        "seed": split_report.get("seed"),
+        "validation_fraction": split_report.get("validation_fraction"),
+        "metadata_commit": receipt.get("metadata", {}).get("repository_commit"),
+        "metadata_sha256": receipt.get("metadata", {}).get("sha256"),
+        "release_profile": receipt.get("release_profile"),
+    }
+    with manifest.open() as handle:
+        manifest_rows = sum(1 for _ in handle) - 1
+    valid = (
+        recorded_settings == settings
+        and receipt.get("archive", {}).get("bytes") == archive.stat().st_size
+        and archive.stat().st_size == CAMOTION_ARCHIVE_BYTES
+        and file_sha256(metadata) == CAMOTION_ATTRIBUTES_SHA256
+        and receipt.get("manifest_sha256") == file_sha256(manifest)
+        and receipt.get("split_manifest_sha256") == file_sha256(split_manifest)
+        and receipt.get("attribute_manifest_sha256") == file_sha256(attribute_manifest)
+        and receipt.get("rows") == manifest_rows
+    )
+    if not valid:
+        return None
+    receipt["schema_version"] = 2
+    receipt["bootstrap_version"] = CAMOTION_BOOTSTRAP_VERSION
+    receipt["build_settings"] = settings
+    _write_json_atomic(receipt_path, receipt)
+    print(f"Using cached CAMotion manifest and verification receipt: {receipt_path}")
+    return receipt
+
+
 def _bootstrap_camotion(args, root: Path, manifest_dir: Path) -> dict:
     if not args.accept_camotion_academic_license:
         raise PermissionError(
@@ -262,6 +329,13 @@ def _bootstrap_camotion(args, root: Path, manifest_dir: Path) -> dict:
     progress.update(1)
     _ensure_camotion_extracted(archive, extracted, args.staging_root)
     progress.update(1)
+    cached_receipt = _cached_camotion_receipt(
+        args, manifest_dir, archive, metadata, extracted,
+    )
+    if cached_receipt is not None:
+        progress.update(2)
+        progress.close()
+        return cached_receipt
     duplicate_report = verify_camotion_flattened_segmentation_duplicates(archive)
     attributes = parse_camotion_attributes(metadata.read_text().splitlines())
     manifest = manifest_dir / "camotion.csv"
@@ -287,7 +361,8 @@ def _bootstrap_camotion(args, root: Path, manifest_dir: Path) -> dict:
     attribute_path = manifest_dir / "camotion.attributes.json"
     attribute_path.write_text(json.dumps(attribute_manifest, indent=2) + "\n")
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "bootstrap_version": CAMOTION_BOOTSTRAP_VERSION,
         "created_at_utc": datetime.now(UTC).isoformat(),
         "official_source": CAMOTION_REPOSITORY,
         "usage": "academic_research_only",
@@ -301,12 +376,19 @@ def _bootstrap_camotion(args, root: Path, manifest_dir: Path) -> dict:
         "split_manifest_sha256": file_sha256(manifest.with_suffix(".splits.json")),
         "context_policy": "released_sequence_rgb_frames_only_no_dense_rgb_archive_available",
         "release_profile": "camotion_public_stride5_v1",
+        "build_settings": {
+            "seed": args.seed,
+            "validation_fraction": args.validation_fraction,
+            "metadata_commit": CAMOTION_METADATA_COMMIT,
+            "metadata_sha256": CAMOTION_ATTRIBUTES_SHA256,
+            "release_profile": "camotion_public_stride5_v1",
+        },
         "flattened_export_verification": duplicate_report,
         "attribute_manifest": str(attribute_path.resolve()),
         "attribute_manifest_sha256": file_sha256(attribute_path),
         "rows": len(frame), "splits": split_report,
     }
-    manifest.with_suffix(".bootstrap.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    _write_json_atomic(manifest.with_suffix(".bootstrap.json"), receipt)
     return receipt
 
 

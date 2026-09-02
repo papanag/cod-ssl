@@ -120,6 +120,15 @@ def test_camotion_inspection_emits_attribute_and_split_artifacts(tmp_path):
     cooccurrence = pd.read_csv(output / "attribute_cooccurrence.csv", index_col=0)
     assert cooccurrence.equals(cooccurrence.T)
 
+    second = subprocess.run(
+        [sys.executable, "scripts/inspect_dataset.py",
+         "--config", "configs/datasets/camotion.yaml",
+         "--manifest", str(manifest), "--output", str(output)],
+        cwd=root, check=True, text=True, capture_output=True,
+    )
+    assert "Using cached dataset inspection" in second.stdout
+    assert (output / "inspection_receipt.json").is_file()
+
 
 def test_camotion_only_requires_flattened_rgb_gt_equivalence(tmp_path):
     archive = tmp_path / "CAMotion.zip"
