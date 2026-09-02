@@ -84,6 +84,8 @@ def test_vcod_notebooks_are_thin_valid_colab_orchestrators():
         )
     assert "scripts/inspect_dataset.py" in sources[names[0]]
     assert "scripts/bootstrap_vcod_data.py" in sources[names[0]]
+    assert "sys.path.insert(0, project_src)" in sources[names[0]]
+    assert "PROJECT_DIR / 'src'" in sources[names[0]]
     assert "--staging-root" in sources[names[0]]
     assert "/content/vcod_extract_staging" in sources[names[0]]
     assert "CAMOTION_MANIFEST" in sources[names[0]]
