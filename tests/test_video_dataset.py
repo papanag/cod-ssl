@@ -40,3 +40,50 @@ def test_source_video_leakage_is_fatal(tmp_path):
     frame = pd.read_csv(_manifest(tmp_path)); frame.loc[3, "source_video_id"] = "v1"
     with pytest.raises(ValueError, match="leakage"):
         assert_disjoint_video_splits(frame)
+
+
+def test_context_only_rows_are_sampled_but_are_not_supervised_targets(tmp_path):
+    path = _manifest(tmp_path)
+    frame = pd.read_csv(path)
+    frame["is_target"] = False
+    frame.loc[(frame.video_id == "v1") & (frame.frame_number == 7), "is_target"] = True
+    frame.loc[(frame.video_id == "v2") & (frame.frame_number == 7), "is_target"] = True
+    frame.loc[~frame.is_target, "mask_path"] = ""
+    frame.to_csv(path, index=False)
+    dataset = ManifestVideoCODDataset(
+        path, split="train", regime="default", clip_spec=ClipSpec(3, 1, 1), size=16
+    )
+    assert len(dataset) == 1
+    sample = dataset[0]
+    assert sample["frame_number"] == 7
+    assert sample["source_frame_indices"] == [2, 7, 20]
+
+
+def test_shuffled_diagnostic_preserves_frame_multiset_and_target_slot(tmp_path):
+    path = _manifest(tmp_path)
+    ordered = ManifestVideoCODDataset(
+        path, split="train", regime="default", clip_spec=ClipSpec(3, 1, 1), size=16
+    )[1]
+    shuffled = ManifestVideoCODDataset(
+        path, split="train", regime="default", clip_spec=ClipSpec(3, 1, 1), size=16,
+        temporal_order="shuffled", diagnostic_seed=9,
+    )[1]
+    assert sorted(shuffled["source_frame_indices"]) == sorted(ordered["source_frame_indices"])
+    assert shuffled["source_frame_indices"][1] == ordered["source_frame_indices"][1] == 7
+    assert shuffled["context_cadence"] == "shuffled_dense"
+
+
+def test_declared_source_step_and_causal_context_are_enforced(tmp_path):
+    path = _manifest(tmp_path)
+    wrong = ManifestVideoCODDataset(
+        path, split="train", regime="default", clip_spec=ClipSpec(3, 1, 1), size=16,
+        source_frame_step=5,
+    )
+    with pytest.raises(ValueError, match="declared cadence"):
+        wrong[1]
+    causal = ManifestVideoCODDataset(
+        path, split="train", regime="default", clip_spec=ClipSpec(3, 1, 1), size=16,
+        context_direction="causal",
+    )[1]
+    assert causal["source_frame_indices"] == [2, 7, 7]
+    assert causal["valid_temporal_mask"].tolist() == [True, True, False]

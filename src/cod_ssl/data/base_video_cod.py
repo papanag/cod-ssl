@@ -16,7 +16,10 @@ class VideoSampleMeta:
     source_video_id: str
     frame_id: str
     frame_number: int
+    source_frame_number: int
+    sequence_position: int
     source_frame_indices: tuple[int, ...]
+    source_sequence_positions: tuple[int, ...]
     target_index: int
     fps: float | None
     timestamps_sec: tuple[float, ...] | None
@@ -37,7 +40,11 @@ REQUIRED_SAMPLE_KEYS = frozenset({
     "frames", "target_mask", "target_index", "video_id", "source_video_id",
     "frame_id", "frame_number", "source_frame_indices", "timestamps_sec", "fps",
     "dataset", "regime", "split", "annotation_type", "valid_temporal_mask",
-    "attributes", "metadata",
+    "attributes", "metadata", "source_frame_number", "sequence_position",
+    "source_sequence_positions", "release_profile", "context_cadence",
+    "released_frame_step", "source_frame_step", "dense_intermediate_rgb_available",
+    "boundary_policy",
+    "context_direction",
 })
 
 
@@ -54,3 +61,5 @@ def validate_video_sample(sample: dict[str, Any]) -> None:
         raise ValueError("valid_temporal_mask must be bool [T]")
     if len(sample["source_frame_indices"]) != frames.shape[0]:
         raise ValueError("source_frame_indices must contain one index per clip frame")
+    if len(sample["source_sequence_positions"]) != frames.shape[0]:
+        raise ValueError("source_sequence_positions must contain one position per clip frame")

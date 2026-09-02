@@ -56,6 +56,36 @@ def extract_archive(archive: str | Path, destination: str | Path) -> None:
     raise ValueError(f"unsupported archive: {archive}")
 
 
+def extract_zip_prefixes(
+    archive: str | Path,
+    destination: str | Path,
+    prefixes: tuple[str, ...],
+    *,
+    required_path_parts: set[str] | None = None,
+) -> None:
+    """Safely extract only explicitly selected ZIP subtrees."""
+    archive, destination = Path(archive), Path(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive) as handle:
+        members = [
+            member
+            for member in handle.infolist()
+            if member.filename.startswith(prefixes)
+            and (
+                required_path_parts is None
+                or required_path_parts.intersection(Path(member.filename).parts)
+            )
+        ]
+        if not members:
+            raise ValueError(f"archive has no members under the selected prefixes: {prefixes}")
+        for member in members:
+            _safe_destination(destination, member.filename)
+        for member in tqdm(
+            members, desc=f"extract selected {archive.name}", unit="file", dynamic_ncols=True
+        ):
+            handle.extract(member, destination)
+
+
 def _files_by_stem(directory: Path) -> dict[str, Path]:
     return {
         path.stem: path.resolve()

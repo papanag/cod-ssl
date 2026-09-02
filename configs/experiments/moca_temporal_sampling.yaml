@@ -1,0 +1,9 @@
+ablation:
+  name: moca_temporal_sampling
+  dataset: moca_mask_dense
+  systems: [DT, VV]
+  source_frame_strides: [1, 5]
+  retrain_per_sampling_regime: true
+  targets: same_manifest
+  splits: same_manifest
+  d1_reuses_primary_when_config_hash_matches: true

@@ -18,6 +18,8 @@ from tqdm.auto import tqdm
 
 from cod_ssl.data import CODDataset
 from cod_ssl.data.clip_sampler import ClipSpec
+from cod_ssl.data.collate import video_collate
+from cod_ssl.data.camotion_attributes import ATTRIBUTE_CODES
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
 from cod_ssl.engine import Evaluator
 from cod_ssl.engine.train import select_amp
@@ -26,6 +28,7 @@ from cod_ssl.metrics import CODMetrics
 from cod_ssl.metrics.aggregation import aggregate_frame_and_video, per_video_table
 from cod_ssl.models import build_frozen_cod_model, build_video_cod_model
 from cod_ssl.utils.reproducibility import seed_everything
+from cod_ssl.utils.run import file_sha256
 
 
 def evaluate_video_run(
@@ -39,6 +42,15 @@ def evaluate_video_run(
     )
     if not manifest:
         raise FileNotFoundError(f"set {config['dataset']['manifest_env']} for video evaluation")
+    if config["dataset"]["name"] == "moca_mask_dense":
+        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import verify_moca_mask_dense
+        manifest_path = Path(manifest).resolve()
+        if manifest_path.name != "runtime_manifest.csv" or manifest_path.parent.name != "manifest":
+            raise ValueError("dense MoCA evaluation requires the verified moca_mask_dense_v1 runtime manifest")
+        verify_moca_mask_dense(manifest_path.parent.parent)
+        run_manifest_hash = file_sha256(manifest_path.parent / "manifest_checksums.sha256")
+    else:
+        run_manifest_hash = file_sha256(manifest)
     clip = config["clip"]
     system = config["experiment"]["system_id"]
     sample_spec = (
@@ -55,8 +67,21 @@ def evaluate_video_run(
         training=False,
         size=int(config["backbone"]["input_size"][0]),
         regime=config["dataset"]["regime"],
+        context_cadence=clip.get("context_cadence"),
+        source_frame_step=clip.get("source_frame_stride"),
+        release_profile=config["dataset"].get("release_profile"),
+        boundary_policy=config["dataset"].get("boundary_policy"),
+        temporal_order=(
+            "repeated" if config.get("input_treatment") == "repeated_target"
+            else clip.get("order_mode", "ordered")
+        ),
+        diagnostic_seed=int(clip.get("diagnostic_seed", config["experiment"]["seed"])),
+        context_direction=clip.get("context_direction", "bidirectional"),
+        filter_regime=config["dataset"]["name"] not in {"moca_mask_dense", "camotion"},
     )
-    loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+    loader = DataLoader(
+        dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=video_collate
+    )
     if not len(loader):
         raise ValueError("video evaluation manifest contains no targets for this split/regime")
     model = build_video_cod_model(config)
@@ -110,7 +135,7 @@ def evaluate_video_run(
         metric.step(views["minmax_uint8"], ground_truth)
         values = metric.compute()
         source_id, frame_id = batch["source_video_id"][0], batch["frame_id"][0]
-        key = (source_id, int(batch["frame_number"][0]))
+        key = (batch["video_id"][0], int(batch["frame_number"][0]))
         if key in keys:
             raise ValueError(f"duplicate evaluation target key: {key}")
         keys.add(key)
@@ -122,22 +147,46 @@ def evaluate_video_run(
                 minmax=views["minmax"],
             )
         target_binary = ground_truth > 0
+        attribute_vector = {
+            code: bool(batch["attributes"].get(code, torch.tensor([False]))[0])
+            for code in ATTRIBUTE_CODES
+        }
+        attribute_scope = batch["metadata"].get("attribute_scope")
+        attribute_scope = None if attribute_scope is None else attribute_scope[0]
         row = {
             "run_id": run_dir.name, "system_id": config["experiment"]["system_id"],
             "dataset": config["dataset"]["name"], "regime": config["dataset"]["regime"],
             "split": split, "seed": config["experiment"]["seed"],
             "video_id": batch["video_id"][0], "source_video_id": source_id,
+            "benchmark_sequence_id": batch["video_id"][0],
+            "source_sequence_id": source_id,
             "frame_id": frame_id, "frame_number": int(batch["frame_number"][0]),
+            "source_frame_number": int(batch["source_frame_number"][0]),
+            "sequence_position": int(batch["sequence_position"][0]),
             "annotation_type": batch["annotation_type"][0],
             "target_index": int(batch["target_index"][0]),
             "source_frame_indices": json.dumps([int(value[0]) for value in batch["source_frame_indices"]]),
+            "source_sequence_positions": json.dumps(
+                [int(value[0]) for value in batch["source_sequence_positions"]]
+            ),
+            "release_profile": batch["release_profile"][0],
+            "context_cadence": batch["context_cadence"][0],
+            "released_frame_step": int(batch["released_frame_step"][0]),
+            "source_frame_step": int(batch["source_frame_step"][0]),
+            "dense_intermediate_rgb_available": bool(batch["dense_intermediate_rgb_available"][0]),
+            "boundary_policy": batch["boundary_policy"][0],
+            "context_direction": batch["context_direction"][0],
+            "preprocessing_manifest_hash": run_manifest_hash,
             "foreground_fraction": float(target_binary.mean()), "motion_proxy": np.nan,
             "S": values["s_measure"], "E_adapt": values["e_adaptive"],
             "weightedF": values["weighted_f"], "MAE": values["mae"],
             "E_mean": values["e_mean"], "E_max": values["e_max"],
             "raw_mean_probability": float(views["sigmoid_raw"].mean()),
             "raw_max_probability": float(views["sigmoid_raw"].max()),
-            "inference_ms": inference_ms, "attributes": json.dumps(batch["attributes"], default=str),
+            "inference_ms": inference_ms,
+            "attributes": json.dumps(attribute_vector, sort_keys=True),
+            "attribute_scope": attribute_scope,
+            **{f"attr_{code}": value for code, value in attribute_vector.items()},
         }
         rows.append(row)
         completed = len(rows)
@@ -170,8 +219,46 @@ def evaluate_video_run(
     videos = per_video_table(frame)
     videos.to_csv(run_dir / "per_video.csv", index=False)
     aggregates = aggregate_frame_and_video(frame)
+    attribute_results = {}
+    for code in ATTRIBUTE_CODES:
+        subset = frame[frame[f"attr_{code}"]]
+        if not subset.empty:
+            subset_aggregates = aggregate_frame_and_video(subset)
+            attribute_results[code] = {
+                "n_videos": int(subset.source_video_id.nunique()),
+                "n_targets": len(subset),
+                "frame_weighted_official_compatible": subset_aggregates["frame_weighted"],
+                "video_weighted_study_primary": subset_aggregates["video_weighted"],
+            }
+    attribute_manifest = Path(manifest).with_name("camotion.attributes.json")
+    source_stride = int(clip.get("source_frame_stride", 1))
+    preprocessing_hash = None
+    derived_context_frames = None
+    original_moca_rgb_frames = None
+    if config["dataset"]["name"] == "moca_mask_dense":
+        preprocessing_hash = file_sha256(Path(manifest).resolve().parent / "manifest_checksums.sha256")
+        release_manifest = json.loads((Path(manifest).resolve().parent / "release_manifest.json").read_text())
+        derived_context_frames = release_manifest["derived"]["derived_dense_context_frames"]
+        original_moca_rgb_frames = release_manifest["original_moca"]["discovered_rgb_frames"]
+    dataset_release = {
+        "release_profile": config["dataset"].get("release_profile"),
+        "paper_reported_frames": 149_319 if config["dataset"]["name"] == "camotion" else 22_939,
+        "released_unique_rgb": 30_028 if config["dataset"]["name"] == "camotion" else 4_691,
+        "manual_targets": 30_028 if config["dataset"]["name"] == "camotion" else 4_691,
+        "dense_intermediate_rgb_available": config["dataset"]["name"] == "moca_mask_dense",
+        "flattened_exports_are_duplicates": config["dataset"]["name"] == "camotion",
+        "preprocessing_manifest_hash": preprocessing_hash,
+        "boundary_policy": config["dataset"].get("boundary_policy"),
+        "derived_dense_context_frames": derived_context_frames,
+        "original_moca_rgb_frames": original_moca_rgb_frames,
+    }
+    n_observations = 1 if system in {"DS", "VI"} else int(clip["length"])
+    clip_summary = dict(clip) | {
+        "source_frame_span": (n_observations - 1) * source_stride,
+        "n_observations": n_observations,
+    }
     summary = {
-        "schema_version": 1,
+        "schema_version": 3,
         "run": {"run_id": run_dir.name, "system_id": config["experiment"]["system_id"],
                 "dataset": config["dataset"]["name"], "regime": config["dataset"]["regime"],
                 "seed": config["experiment"]["seed"]},
@@ -180,8 +267,21 @@ def evaluate_video_run(
                            "temporal_adapter": config["temporal_adapter"]["name"],
                            "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
                            "frozen_parameters": sum(p.numel() for p in model.parameters() if not p.requires_grad)},
-        "clip": clip,
-        "metrics": {"minmax": aggregates, "sigmoid_raw_diagnostics": {
+        "clip": clip_summary,
+        "dataset_release": dataset_release,
+        "dataset_metadata": {
+            "attribute_scope": "sequence" if config["dataset"]["name"] == "camotion" else None,
+            "attribute_codes": list(ATTRIBUTE_CODES) if config["dataset"]["name"] == "camotion" else [],
+            "attribute_manifest_sha256": (
+                file_sha256(attribute_manifest) if attribute_manifest.is_file() else None
+            ),
+            "usage": "academic_research_only" if config["dataset"]["name"] == "camotion" else None,
+        },
+        "metrics": {"minmax": {
+            "frame_weighted_official_compatible": aggregates["frame_weighted"],
+            "video_weighted_study_primary": aggregates["video_weighted"],
+            "by_attribute": attribute_results,
+        }, "sigmoid_raw_diagnostics": {
             "mean_probability": float(frame.raw_mean_probability.mean())}},
         "prediction_view": "minmax",
         "timing": {"mode": "cold", "ms_per_output_frame": float(frame.inference_ms.mean()),

@@ -59,6 +59,23 @@ def validate_vcod_config(config: dict[str, Any]) -> None:
         raise ValueError("V-JEPA video clip length must be divisible by tubelet size 2")
     if system in {"DM", "VR"} and config["experiment"].get("primary", False):
         raise ValueError("DM and VR are diagnostics, never primary systems")
+    if clip.get("context_direction") not in {"causal", "bidirectional"}:
+        raise ValueError("clip.context_direction must explicitly be causal or bidirectional")
+    dataset = config["dataset"]
+    if dataset.get("name") == "camotion":
+        if dataset.get("release_profile") != "camotion_public_stride5_v1":
+            raise ValueError("CAMotion requires release profile camotion_public_stride5_v1")
+        if dataset.get("dense_intermediate_rgb_available", False):
+            raise ValueError("public CAMotion cannot declare dense intermediate RGB")
+        if clip.get("released_stride") != 1 or clip.get("source_frame_stride") != 5:
+            raise ValueError("CAMotion primary clips require released stride 1 and source-frame stride 5")
+    if dataset.get("name") == "moca_mask_dense":
+        if dataset.get("release_profile") != "moca_mask_dense_v1":
+            raise ValueError("dense MoCA requires the moca_mask_dense_v1 preprocessing product")
+        if dataset.get("boundary_policy") != "manual_target_hull_v1":
+            raise ValueError("dense MoCA boundary policy must be manual_target_hull_v1")
+        if clip.get("source_frame_stride") not in {1, 5}:
+            raise ValueError("dense MoCA supports declared source-frame strides 1 or 5")
     evaluation = config["evaluation"]
     if evaluation["cod_prediction_view"] != "minmax" or evaluation["diagnostic_prediction_view"] != "sigmoid_raw":
         raise ValueError("COD and raw diagnostic prediction views must remain distinct")

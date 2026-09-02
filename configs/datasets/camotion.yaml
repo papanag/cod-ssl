@@ -1,0 +1,41 @@
+name: camotion
+root_env: CAMOTION_ROOT
+manifest_env: CAMOTION_MANIFEST
+regime: S5
+split_source: official
+validation_source: train_only
+annotation_policy: manual_targets_only
+release_profile:
+  name: camotion_public_stride5_v1
+  archive_size_bytes: 16912530524
+  sequences_total: 474
+  sequences_train: 359
+  sequences_test: 115
+  unique_rgb_total: 30028
+  unique_rgb_train: 23253
+  unique_rgb_test: 6775
+  manual_gt_total: 30028
+  released_original_frame_interval: 5
+  dense_intermediate_rgb_available: false
+  flattened_exports_are_duplicates: true
+  paper_claimed_collected_frames: 149319
+canonical_layout: sequence_organized
+ignore_flattened_duplicates: true
+target_policy: all_released_manual
+attribute_scope: sequence
+allowed_attributes: [MO, BO, SO, UE, OC, SC, OV, MB]
+usage: academic_research_only
+validation_fraction: 0.1
+validation_seed: 42
+expected:
+  sequences_total: 474
+  sequences_train: 359
+  sequences_test: 115
+  unique_rgb_total: 30028
+  unique_rgb_train: 23253
+  unique_rgb_test: 6775
+  manual_gt_total: 30028
+clip:
+  context_cadence: source_stride5
+  released_stride: 1
+  source_frame_stride: 5

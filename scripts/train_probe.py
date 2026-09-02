@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
 from cod_ssl.data.clip_sampler import ClipSpec
+from cod_ssl.data.collate import video_collate
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
 from cod_ssl.losses import BCEDiceLoss
 from cod_ssl.models import build_video_cod_model
@@ -45,7 +46,8 @@ def _run_id(config: dict) -> str:
     adapter = config["temporal_adapter"]["name"]
     clip = config["clip"]
     treatment = "single" if system in {"DS", "VI"} else f"{adapter}__T{clip['length']}_S{clip['stride']}_target{clip['target_index']}"
-    return f"{prefix}__{system}__{config['backbone']['name']}__{treatment}__seed{config['experiment']['seed']}"
+    cadence = config["dataset"].get("regime") or config["clip"].get("context_cadence", "unspecified")
+    return f"{prefix}__{system}__{config['backbone']['name']}__{treatment}__{cadence}__seed{config['experiment']['seed']}"
 
 
 def _config_sha256(config: dict) -> str:
@@ -99,6 +101,15 @@ def main() -> None:
     manifest_value = os.environ.get(config["dataset"]["manifest_env"], config["dataset"].get("split_manifest", ""))
     if not manifest_value or not Path(manifest_value).is_file():
         raise FileNotFoundError(f"set {config['dataset']['manifest_env']} to a validated canonical manifest")
+    if config["dataset"]["name"] == "moca_mask_dense":
+        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import verify_moca_mask_dense
+        manifest_path = Path(manifest_value).resolve()
+        if manifest_path.name != "runtime_manifest.csv" or manifest_path.parent.name != "manifest":
+            raise ValueError(
+                "dense MoCA requires processed/moca_mask_dense_v1/manifest/runtime_manifest.csv; "
+                "run scripts/prepare_moca_mask_dense.py first"
+            )
+        verify_moca_mask_dense(manifest_path.parent.parent)
     clip = config["clip"]
     sample_spec = (ClipSpec(1, 1, 0) if system in {"DS", "VI"} else
                    ClipSpec(int(clip["length"]), int(clip["stride"]), int(clip["target_index"])))
@@ -106,12 +117,23 @@ def main() -> None:
         manifest_value, split="train",
         clip_spec=sample_spec,
         training=True, size=int(config["backbone"]["input_size"][0]), regime=config["dataset"]["regime"],
+        context_cadence=clip.get("context_cadence"),
+        source_frame_step=clip.get("source_frame_stride"),
+        release_profile=config["dataset"].get("release_profile"),
+        boundary_policy=config["dataset"].get("boundary_policy"),
+        temporal_order=(
+            "repeated" if config.get("input_treatment") == "repeated_target"
+            else config["clip"].get("order_mode", "ordered")
+        ),
+        diagnostic_seed=int(config["clip"].get("diagnostic_seed", config["experiment"]["seed"])),
+        context_direction=config["clip"].get("context_direction", "bidirectional"),
+        filter_regime=config["dataset"]["name"] not in {"moca_mask_dense", "camotion"},
     )
     if args.smoke: dataset = Subset(dataset, range(min(4, len(dataset))))
     training = config["training"]
     loader = DataLoader(dataset, batch_size=int(training["batch_size"]), shuffle=True,
                         num_workers=(0 if args.smoke else int(training["num_workers"])),
-                        pin_memory=torch.cuda.is_available())
+                        pin_memory=torch.cuda.is_available(), collate_fn=video_collate)
     model = build_video_cod_model(config)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device).train(); model.assert_gradient_contract()

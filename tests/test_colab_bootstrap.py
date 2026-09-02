@@ -83,6 +83,9 @@ def test_vcod_notebooks_are_thin_valid_colab_orchestrators():
             if cell["cell_type"] == "code"
         )
     assert "scripts/inspect_dataset.py" in sources[names[0]]
+    assert "scripts/bootstrap_vcod_data.py" in sources[names[0]]
+    assert "CAMOTION_MANIFEST" in sources[names[0]]
+    assert "accept-camotion-academic-license" in sources[names[0]]
     assert "vcod_validation_approval.json" in sources[names[0]]
     assert "[dev,notebooks,vcod]" not in sources[names[0]]
     assert "scripts/train_probe.py" in sources[names[1]]
@@ -91,5 +94,6 @@ def test_vcod_notebooks_are_thin_valid_colab_orchestrators():
     assert "RUN_KIND == 'tuning'" in sources[names[1]]
     assert "scripts/evaluate.py" in sources[names[1]]
     assert "scripts/summarize_results.py" in sources[names[2]]
+    assert "camotion_attribute_comparisons.csv" in sources[names[2]]
     assert "RUNS_ROOT = VCOD_ROOT / 'runs'" in sources[names[2]]
     assert "VCOD_ROOT / 'tuning'" not in sources[names[2]]

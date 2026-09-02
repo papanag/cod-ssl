@@ -5,14 +5,21 @@ experiment:
   output_root: outputs
   primary: true
 dataset:
-  name: moca_mask
-  root_env: MOCA_MASK_ROOT
-  manifest_env: MOCA_MASK_MANIFEST
-  regime: default
-  annotation_policy: manual_test
+  name: moca_mask_dense
+  processed_root: null
+  manifest_env: MOCA_MASK_DENSE_MANIFEST
+  regime: D1
+  release_profile: moca_mask_dense_v1
+  annotation_policy: manual_only
+  expected_targets: 4691
+  boundary_policy: manual_target_hull_v1
 clip:
   length: 64
   stride: 1
+  released_stride: 1
+  source_frame_stride: 1
+  context_cadence: dense_source_stride1
+  context_direction: bidirectional
   target_index: 32
   boundary_mode: replicate
   ordered: true

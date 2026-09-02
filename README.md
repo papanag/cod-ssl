@@ -32,25 +32,46 @@ recorded in `docs/gmmix_provenance.md`.
 Video data is represented by a canonical CSV manifest with these required
 columns: `dataset,regime,split,video_id,source_video_id,frame_id,frame_number,
 image_path,mask_path,annotation_type`. Optional `fps` and JSON `attributes`
-columns are preserved. Paths should be absolute so run snapshots remain
-unambiguous.
+columns are preserved. Corrected manifests also store `sequence_position`,
+`source_frame_number`, release/cadence fields, and boundary policy. The optional Boolean `is_target` column permits a row to
+provide temporal context without claiming that it has a supervised mask. Paths
+are absolute so run snapshots remain unambiguous.
 
-Set `MOCA_MASK_MANIFEST` and `CAMOVID60K_MANIFEST` to locally prepared official
-manifests. Dataset releases, credentials, checkpoints, and outputs stay outside
-Git. Execute the correctness gates before training:
+Notebook 05 runs `scripts/bootstrap_vcod_data.py`: it downloads and resumes the
+official Original MoCA, MoCA-Mask, and CAMotion archives, caches selected release assets in Drive,
+verifies locked release counts, creates deterministic video-disjoint validation
+splits from official training sequences, and writes manifests, split IDs, archive
+hashes, and provenance receipts. MoCA uses only 4,691 manual targets; dense context
+comes from SHA-256-verified Original MoCA frames within conservative target hulls.
+No pseudo masks enter the corrected benchmark. CAMotion uses only its 30,028 sequence-organized
+manual RGB/GT pairs and the attribute file pinned to official repository commit
+`bf92692f9f9f2820185f9aa9a06fd2891dadf9a7`. The public archive does not contain
+the paper-described 149,319 collected frames; released observations have source-frame step five.
+
+For a non-Colab bootstrap, run:
 
 ```bash
-python scripts/inspect_dataset.py --config configs/datasets/moca_mask.yaml \
-  --output outputs/inspection/moca_mask
-python scripts/inspect_dataset.py --config configs/datasets/camovid60k.yaml \
-  --regime small_displacement --output outputs/inspection/camovid60k_small
+python scripts/bootstrap_vcod_data.py \
+  --data-root /persistent/vcod/data --manifest-dir /persistent/vcod/manifests \
+  --datasets moca_mask_dense camotion --accept-camotion-academic-license
+```
+
+Dataset releases, checkpoints, and outputs stay outside Git. Execute the
+correctness gates before training:
+
+```bash
+python scripts/inspect_dataset.py --config configs/datasets/moca_mask_dense.yaml \
+  --output outputs/inspection/moca_mask_dense
+python scripts/inspect_dataset.py --config configs/datasets/camotion.yaml \
+  --output outputs/inspection/camotion
 python scripts/inspect_backbone.py --model vjepa21_vitb16 --pathway video \
   --clip-length 64 --target-index 32
 pytest
 ```
 
-The official V-JEPA2.1 hub geometry locks the primary clip to 64 frames,
-tubelet size 2, stride 1, and source target index 32. The selected temporal
+The official V-JEPA2.1 hub geometry locks the primary clip to 64 observations,
+tubelet size 2, and source target index 32. MoCA primary context uses source stride
+one; CAMotion uses released stride one/source stride five. The selected temporal
 token is 16 and covers source indices 32–33. See
 `docs/vjepa21_dense_mapping.md`; manual checkpoint-specific sign-off is still
 mandatory before a scientific test run.
@@ -71,12 +92,12 @@ smoke or tuning outputs into the final `vcod/runs` directory. The VCOD trainer
 writes readout-only atomic checkpoints every 250 optimizer steps so a Colab
 disconnect loses bounded work and cannot leave a partially written checkpoint.
 
-Preview the exact 12-cell-per-seed matrix without starting compute:
+Preview the exact eight-cell-per-seed matrix without starting compute:
 
 ```bash
 python scripts/run_primary_matrix.py \
   --config configs/experiments/vcod_primary_2x2.yaml \
-  --datasets moca_mask camovid60k_small camovid60k_large \
+  --datasets moca_mask_dense camotion \
   --systems DS VI DT VV --seeds 42 43 44 --dry-run
 ```
 
@@ -84,7 +105,7 @@ Train/evaluate an individual probe after dataset and backbone gates pass:
 
 ```bash
 python scripts/train_probe.py --config configs/experiments/vcod_primary_2x2.yaml \
-  experiment.system_id=DT dataset.name=moca_mask --smoke
+  experiment.system_id=DT dataset.name=moca_mask_dense --smoke
 python scripts/evaluate.py --run-dir outputs/<run_id> --split test --save-logits
 ```
 
@@ -95,7 +116,9 @@ only after all requested primary cells exist:
 ```bash
 python scripts/summarize_results.py --runs-root outputs \
   --matrix configs/experiments/vcod_primary_2x2.yaml \
-  --output outputs/reports/primary_comparison
+  --temporal-sampling-ablation configs/experiments/moca_temporal_sampling.yaml \
+  --output outputs/reports/primary_comparison \
+  --attributes OC OV MB SO MO UE SC BO
 ```
 
 Both commands enforce four `[B,768,24,24]` frozen feature maps from layers

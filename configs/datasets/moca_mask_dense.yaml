@@ -1,0 +1,36 @@
+dataset_build:
+  name: moca_mask_dense_v1
+  original_moca_root: null
+  moca_mask_root: null
+  output_root: null
+  boundary_policy: manual_target_hull_v1
+  materialization: symlink
+  verify_content: sha256_targets
+  allow_terminal_non_stride5_target: true
+  require_consecutive_original_frames: true
+  require_binary_masks: true
+  validation_fraction: 0.1
+  validation_seed: 42
+  overwrite: false
+  expected:
+    original_sequences: 141
+    original_rgb_frames: 37250
+    benchmark_sequences: 87
+    benchmark_train_sequences: 71
+    benchmark_test_sequences: 16
+    manual_target_images: 4691
+    manual_masks: 4691
+
+dataset:
+  name: moca_mask_dense
+  processed_root: null
+  release_profile: moca_mask_dense_v1
+  target_policy: manual_only
+  expected_targets: 4691
+  boundary_policy: manual_target_hull_v1
+  manifest_env: MOCA_MASK_DENSE_MANIFEST
+
+clip:
+  context_cadence: dense_source_stride1
+  released_stride: 1
+  source_frame_stride: 1

@@ -1,7 +1,11 @@
-name: moca_mask
-root_env: MOCA_MASK_ROOT
-manifest_env: MOCA_MASK_MANIFEST
-regime: default
-annotation_policy: manual_test
+name: moca_mask_public_sparse
+root_env: MOCA_MASK_PUBLIC_ROOT
+manifest_env: MOCA_MASK_PUBLIC_SPARSE_MANIFEST
+regime: public_sparse
+release_profile: moca_mask_public_sparse_v1
+annotation_policy: manual_only
+dense_intermediate_rgb_available: false
+paper_reported_selected_frames: 22939
+expected_targets: 4691
 validation_fraction: 0.1
 validation_seed: 42
