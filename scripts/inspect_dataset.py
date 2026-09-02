@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from itertools import pairwise
 from pathlib import Path
 
@@ -300,7 +301,38 @@ def _camotion_artifacts(
     return summary
 
 
-def inspect(frame: pd.DataFrame, manifest: Path, output: Path, seed: int) -> dict:
+def _inspect_asset_row(row) -> dict:
+    image_path = Path(row.image_path)
+    if not image_path.is_file():
+        return {"missing_image": str(image_path)}
+    raw_target = getattr(row, "is_target", True)
+    is_target = raw_target if isinstance(raw_target, bool) else str(raw_target).lower() == "true"
+    if not is_target:
+        with Image.open(image_path) as image:
+            return {"resolution": f"{image.width}x{image.height}|context"}
+    if pd.isna(row.mask_path) or not str(row.mask_path).strip():
+        return {"missing_mask": f"{row.video_id}/{row.frame_id}: blank"}
+    mask_path = Path(row.mask_path)
+    if not mask_path.is_file():
+        return {"missing_mask": str(mask_path)}
+    with Image.open(image_path) as image, Image.open(mask_path) as mask:
+        resolution = f"{image.width}x{image.height}|{mask.width}x{mask.height}"
+        mask_array = np.asarray(mask.convert("L"))
+    fraction = float((mask_array > 0).mean())
+    return {
+        "resolution": resolution,
+        "foreground": fraction,
+        "empty": str(row.frame_id) if fraction == 0 else None,
+        "full": str(row.frame_id) if fraction == 1 else None,
+        "nonbinary": (
+            str(row.frame_id) if not set(np.unique(mask_array)).issubset({0, 255}) else None
+        ),
+    }
+
+
+def inspect(
+    frame: pd.DataFrame, manifest: Path, output: Path, seed: int, workers: int = 16,
+) -> dict:
     missing = REQUIRED_COLUMNS - set(frame.columns)
     if missing:
         raise ValueError(f"manifest missing columns: {sorted(missing)}")
@@ -334,39 +366,26 @@ def inspect(frame: pd.DataFrame, manifest: Path, output: Path, seed: int) -> dic
             gaps[str(video_id)] = missing_numbers
     missing_images, missing_masks, empty_masks, full_masks, nonbinary_masks = [], [], [], [], []
     resolutions, foreground = Counter(), []
-    for row in tqdm(
-        ordered.itertuples(), total=len(ordered), desc="validating frames and target masks",
-        unit="frame", dynamic_ncols=True,
-    ):
-        image_path = Path(row.image_path)
-        if not image_path.is_file():
-            missing_images.append(str(image_path))
-            continue
-        raw_target = getattr(row, "is_target", True)
-        is_target = raw_target if isinstance(raw_target, bool) else str(raw_target).lower() == "true"
-        if not is_target:
-            with Image.open(image_path) as image:
-                resolutions[f"{image.width}x{image.height}|context"] += 1
-            continue
-        if pd.isna(row.mask_path) or not str(row.mask_path).strip():
-            missing_masks.append(f"{row.video_id}/{row.frame_id}: blank")
-            continue
-        mask_path = Path(row.mask_path)
-        if not mask_path.is_file():
-            missing_masks.append(str(mask_path))
-            continue
-        with Image.open(image_path) as image, Image.open(mask_path) as mask:
-            resolutions[f"{image.width}x{image.height}|{mask.width}x{mask.height}"] += 1
-            mask_array = np.asarray(mask.convert("L"))
-            binary = mask_array > 0
-            if not set(np.unique(mask_array)).issubset({0, 255}):
-                nonbinary_masks.append(str(row.frame_id))
-        fraction = float(binary.mean())
-        foreground.append(fraction)
-        if fraction == 0:
-            empty_masks.append(str(row.frame_id))
-        if fraction == 1:
-            full_masks.append(str(row.frame_id))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = executor.map(_inspect_asset_row, ordered.itertuples())
+        for result in tqdm(
+            results, total=len(ordered), desc="validating frames and target masks",
+            unit="frame", dynamic_ncols=True,
+        ):
+            if value := result.get("missing_image"):
+                missing_images.append(value)
+            if value := result.get("missing_mask"):
+                missing_masks.append(value)
+            if value := result.get("resolution"):
+                resolutions[value] += 1
+            if (value := result.get("foreground")) is not None:
+                foreground.append(value)
+            if value := result.get("empty"):
+                empty_masks.append(value)
+            if value := result.get("full"):
+                full_masks.append(value)
+            if value := result.get("nonbinary"):
+                nonbinary_masks.append(value)
     if missing_images or missing_masks:
         raise ValueError(f"missing images={len(missing_images)}, masks={len(missing_masks)}")
     counts = ordered.groupby("source_video_id").size()
@@ -428,8 +447,11 @@ def main() -> None:
     parser.add_argument("--config", required=True); parser.add_argument("--manifest")
     parser.add_argument("--regime"); parser.add_argument("--output", required=True)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    if args.workers < 1:
+        parser.error("--workers must be at least 1")
     config_path = Path(args.config)
     loaded = load_config(config_path)
     config = loaded.get("dataset", loaded)
@@ -456,7 +478,7 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
     try:
-        report = inspect(frame, manifest, temporary, args.seed)
+        report = inspect(frame, manifest, temporary, args.seed, args.workers)
         if config["name"] == "camotion":
             _camotion_artifacts(frame, temporary, args.seed, config)
         _write_json_atomic(temporary / "inspection_receipt.json", {
