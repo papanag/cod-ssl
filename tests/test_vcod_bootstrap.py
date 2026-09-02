@@ -9,6 +9,7 @@ from PIL import Image
 
 from cod_ssl.data.bootstrap import merge_tree_parallel
 from cod_ssl.data.clip_sampler import ClipSpec
+from cod_ssl.data.preprocessing import prepare_moca_mask_dense as moca_dense
 from cod_ssl.data.preprocessing.moca_release_inventory import inventory_moca_mask
 from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense, verify_moca_mask_dense
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
@@ -158,6 +159,24 @@ def test_moca_dense_build_preserves_manual_targets_bounds_and_identity(tmp_path)
         output_root=output, materialization="manifest_only", verify_counts=False,
     )
     assert second["targets"] == 6
+
+
+def test_cached_moca_build_skips_rehashing_linked_drive_targets(tmp_path, monkeypatch):
+    original, output = _build(tmp_path)
+    calls = []
+
+    def fast_verify(output_root, *, verify_linked_targets=True):
+        calls.append((Path(output_root), verify_linked_targets))
+        return {"targets": 6}
+
+    monkeypatch.setattr(moca_dense, "verify_moca_mask_dense", fast_verify)
+    result = moca_dense.build_moca_mask_dense(
+        _config(), original_moca_root=original, moca_mask_root=tmp_path / "mask",
+        output_root=output, materialization="manifest_only", verify_counts=False,
+    )
+
+    assert result["targets"] == 6
+    assert calls == [(output.resolve(), False)]
 
 
 def test_moca_dense_runtime_d1_and_s5_never_cross_subsegments(tmp_path):

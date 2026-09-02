@@ -24,6 +24,11 @@ unavailable paper-described 22,939-frame package.
 The official mask PNGs are retained byte-for-byte and their stored grayscale
 values are recorded in `mask_quality.csv`; training and evaluation use the
 repository-wide nonzero-foreground rule rather than requiring 0/255 storage.
+The initial dense build hashes every linked target RGB and mask. Routine cached
+bootstraps validate manifest checksums and structure without rereading all 4,691
+target pairs from Drive. Run `scripts/prepare_moca_mask_dense.py --verify-only`
+with the configured `--output-root` whenever a fresh full asset-integrity check
+is required.
 
 CAMotion sign-off must record the archive SHA-256, pinned attribute-file SHA-256,
 official repository commit, exact validation IDs, discrepancies, exclusions,

@@ -469,7 +469,11 @@ def build_moca_mask_dense(
             raise FileExistsError(
                 "existing dense MoCA build has different provenance/configuration; pass --overwrite explicitly"
             )
-        return verify_moca_mask_dense(output)
+        print(
+            "Using cached dense MoCA build; validating manifests without rehashing "
+            "linked Drive targets."
+        )
+        return verify_moca_mask_dense(output, verify_linked_targets=False)
     temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.tmp-", dir=output.parent))
     try:
         summary = _build_into(
@@ -481,7 +485,9 @@ def build_moca_mask_dense(
             backup = output.with_name(f"{output.name}.backup-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}")
             output.rename(backup)
         temporary.rename(output)
-        return summary | verify_moca_mask_dense(output)
+        # The temporary tree received the full linked-target hash check above.
+        # Recheck the published manifests without reading every Drive asset again.
+        return summary | verify_moca_mask_dense(output, verify_linked_targets=False)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
