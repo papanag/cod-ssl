@@ -102,14 +102,18 @@ def main() -> None:
     if not manifest_value or not Path(manifest_value).is_file():
         raise FileNotFoundError(f"set {config['dataset']['manifest_env']} to a validated canonical manifest")
     if config["dataset"]["name"] == "moca_mask_dense":
-        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import verify_moca_mask_dense
+        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import (
+            verify_moca_mask_dense,
+        )
         manifest_path = Path(manifest_value).resolve()
         if manifest_path.name != "runtime_manifest.csv" or manifest_path.parent.name != "manifest":
             raise ValueError(
                 "dense MoCA requires processed/moca_mask_dense_v1/manifest/runtime_manifest.csv; "
                 "run scripts/prepare_moca_mask_dense.py first"
             )
-        verify_moca_mask_dense(manifest_path.parent.parent)
+        # Notebook 05 performs the one-time linked-asset audit. Per-run checks
+        # validate its checksummed manifests without rehashing Drive files.
+        verify_moca_mask_dense(manifest_path.parent.parent, verify_linked_targets=False)
     clip = config["clip"]
     sample_spec = (ClipSpec(1, 1, 0) if system in {"DS", "VI"} else
                    ClipSpec(int(clip["length"]), int(clip["stride"]), int(clip["target_index"])))

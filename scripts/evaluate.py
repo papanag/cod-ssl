@@ -17,9 +17,9 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 from cod_ssl.data import CODDataset
+from cod_ssl.data.camotion_attributes import ATTRIBUTE_CODES
 from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.collate import video_collate
-from cod_ssl.data.camotion_attributes import ATTRIBUTE_CODES
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
 from cod_ssl.engine import Evaluator
 from cod_ssl.engine.train import select_amp
@@ -43,11 +43,15 @@ def evaluate_video_run(
     if not manifest:
         raise FileNotFoundError(f"set {config['dataset']['manifest_env']} for video evaluation")
     if config["dataset"]["name"] == "moca_mask_dense":
-        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import verify_moca_mask_dense
+        from cod_ssl.data.preprocessing.prepare_moca_mask_dense import (
+            verify_moca_mask_dense,
+        )
         manifest_path = Path(manifest).resolve()
         if manifest_path.name != "runtime_manifest.csv" or manifest_path.parent.name != "manifest":
             raise ValueError("dense MoCA evaluation requires the verified moca_mask_dense_v1 runtime manifest")
-        verify_moca_mask_dense(manifest_path.parent.parent)
+        # The linked assets were audited before approval; keep evaluation startup
+        # bounded by validating the checksummed manifests only.
+        verify_moca_mask_dense(manifest_path.parent.parent, verify_linked_targets=False)
         run_manifest_hash = file_sha256(manifest_path.parent / "manifest_checksums.sha256")
     else:
         run_manifest_hash = file_sha256(manifest)
