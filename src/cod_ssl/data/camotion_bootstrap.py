@@ -26,12 +26,19 @@ CAMOTION_EXPECTED = {
 }
 
 
-def verify_camotion_flattened_duplicates(archive: str | Path) -> dict[str, object]:
-    """Verify flattened ZIP exports are byte-signature duplicates of canonical assets."""
+def verify_camotion_flattened_segmentation_duplicates(
+    archive: str | Path,
+) -> dict[str, object]:
+    """Verify flattened RGB/GT exports duplicate the canonical segmentation assets."""
     archive = Path(archive)
     if not zipfile.is_zipfile(archive):
         raise ValueError(f"CAMotion release is not a ZIP archive: {archive}")
-    report: dict[str, object] = {"flattened_exports_are_duplicates": True, "partitions": {}}
+    report: dict[str, object] = {
+        "flattened_rgb_gt_are_duplicates": True,
+        "validated_assets": ["Imgs", "GT"],
+        "ignored_assets": ["Edge", "Bbox", "BBox"],
+        "partitions": {},
+    }
     with zipfile.ZipFile(archive) as handle:
         files = [member for member in handle.infolist() if not member.is_dir()]
         for partition, canonical_token, flattened_token in (
@@ -39,10 +46,7 @@ def verify_camotion_flattened_duplicates(archive: str | Path) -> dict[str, objec
             ("test", "/TestDataset_per_sq/", "/CAMotion-TE/"),
         ):
             partition_report = {}
-            for asset, aliases in (
-                ("Imgs", {"Imgs"}), ("GT", {"GT"}), ("Edge", {"Edge"}),
-                ("Bbox", {"Bbox", "BBox"}),
-            ):
+            for asset, aliases in (("Imgs", {"Imgs"}), ("GT", {"GT"})):
                 canonical = Counter(
                     (member.CRC, member.file_size)
                     for member in files
@@ -118,15 +122,7 @@ def _index_partition(root: Path) -> dict[str, dict[str, dict[int, Path]]]:
             raise ValueError(f"CAMotion source IDs violate the public stride-5 profile: {sequence.name}")
         if any(right - left != 5 for left, right in zip(frame_ids, frame_ids[1:])):
             raise ValueError(f"CAMotion sequence has a non-stride-5 filename gap: {sequence.name}")
-        bbox_dir = next(
-            (sequence / name for name in ("Bbox", "BBox") if (sequence / name).is_dir()),
-            None,
-        )
-        boxes = {} if bbox_dir is None else _numeric_files(bbox_dir, suffixes={".txt"})
-        unknown_boxes = set(boxes) - set(images)
-        if unknown_boxes:
-            raise ValueError(f"CAMotion boxes without RGB targets in {sequence.name}")
-        result[sequence.name] = {"images": images, "masks": masks, "boxes": boxes}
+        result[sequence.name] = {"images": images, "masks": masks}
     return result
 
 
@@ -189,8 +185,6 @@ def build_camotion_manifest(
                     "attributes": json.dumps(attribute_vector, sort_keys=True),
                     "attribute_scope": "sequence",
                     "foreground_fraction": foreground_fraction,
-                    "bbox_available": frame_number in assets["boxes"],
-                    "bbox_path": str(assets["boxes"].get(frame_number, "")),
                     "class": None, "subclass": None, "species": None,
                     "official_partition": "test" if split == "test" else "train",
                     "release_profile": "camotion_public_stride5_v1",
@@ -219,7 +213,7 @@ def build_camotion_manifest(
         "discovered_sequence_rgb_frames": len(frame),
         "released_original_frame_interval": 5,
         "dense_intermediate_rgb_available": False,
-        "flattened_exports_are_duplicates": True,
+        "flattened_rgb_gt_are_duplicates": True,
         "release_profile": "camotion_public_stride5_v1",
         "attribute_scope": "sequence",
         "attribute_codes": list(ATTRIBUTE_CODES),

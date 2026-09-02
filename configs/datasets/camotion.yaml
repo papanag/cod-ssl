@@ -17,10 +17,11 @@ release_profile:
   manual_gt_total: 30028
   released_original_frame_interval: 5
   dense_intermediate_rgb_available: false
-  flattened_exports_are_duplicates: true
+  flattened_rgb_gt_are_duplicates: true
   paper_claimed_collected_frames: 149319
 canonical_layout: sequence_organized
-ignore_flattened_duplicates: true
+ignore_flattened_rgb_gt_duplicates: true
+ignore_non_segmentation_assets: [Edge, Bbox, BBox]
 target_policy: all_released_manual
 attribute_scope: sequence
 allowed_attributes: [MO, BO, SO, UE, OC, SC, OV, MB]

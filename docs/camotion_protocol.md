@@ -12,9 +12,12 @@ and completeness gate.
   `6ad95102a836ef5a199e6e0a642ee7ddfbf2f6d8065c40742014cfab934abcd9`
 - Usage: academic research only; commercial use requires author permission.
 
-The bootstrap selects only `TrainDataset_per_sq` and `TestDataset_per_sq` from the
-archive after verifying their CRC32/size multisets. Flattened `CAMotion-TR` and
-`CAMotion-TE` exports duplicate the annotated assets and are never sampled. The selected release has 359/115 sequences and
+The bootstrap selects only `Imgs` and `GT` under `TrainDataset_per_sq` and
+`TestDataset_per_sq` after verifying that their CRC32/size multisets match the
+flattened `CAMotion-TR` and `CAMotion-TE` RGB/GT exports. `Edge`, `Bbox`, and
+`BBox` are outside the segmentation protocol: they are neither extracted nor
+included in manifests, and differences in those unused exports are non-blocking.
+The selected release has 359/115 sequences and
 23,253/6,775 paired RGB/manual-GT targets. Although the paper/project reports
 149,319 collected source frames, the public archive contains only every fifth source frame.
 No frames or masks are interpolated or manufactured. Available annotated RGB

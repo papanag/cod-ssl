@@ -19,7 +19,7 @@ from cod_ssl.data.camotion_attributes import parse_camotion_attributes
 from cod_ssl.data.camotion_bootstrap import (
     build_camotion_manifest,
     discover_camotion_roots,
-    verify_camotion_flattened_duplicates,
+    verify_camotion_flattened_segmentation_duplicates,
 )
 from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense
 from cod_ssl.data.preprocessing.moca_manifest_schema import write_checksums, write_json
@@ -226,7 +226,7 @@ def _ensure_camotion_extracted(
     )
     _extract_staged(
         archive, destination, staging_root, prefixes=prefixes,
-        required_path_parts={"Imgs", "GT", "Bbox", "BBox"},
+        required_path_parts={"Imgs", "GT"},
     )
     discover_camotion_roots(destination)
     marker.write_text("complete\n")
@@ -262,7 +262,7 @@ def _bootstrap_camotion(args, root: Path, manifest_dir: Path) -> dict:
     progress.update(1)
     _ensure_camotion_extracted(archive, extracted, args.staging_root)
     progress.update(1)
-    duplicate_report = verify_camotion_flattened_duplicates(archive)
+    duplicate_report = verify_camotion_flattened_segmentation_duplicates(archive)
     attributes = parse_camotion_attributes(metadata.read_text().splitlines())
     manifest = manifest_dir / "camotion.csv"
     frame, split_report = build_camotion_manifest(

@@ -246,7 +246,7 @@ def evaluate_video_run(
         "released_unique_rgb": 30_028 if config["dataset"]["name"] == "camotion" else 4_691,
         "manual_targets": 30_028 if config["dataset"]["name"] == "camotion" else 4_691,
         "dense_intermediate_rgb_available": config["dataset"]["name"] == "moca_mask_dense",
-        "flattened_exports_are_duplicates": config["dataset"]["name"] == "camotion",
+        "flattened_rgb_gt_are_duplicates": config["dataset"]["name"] == "camotion",
         "preprocessing_manifest_hash": preprocessing_hash,
         "boundary_policy": config["dataset"].get("boundary_policy"),
         "derived_dense_context_frames": derived_context_frames,

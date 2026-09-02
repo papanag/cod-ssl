@@ -8,7 +8,10 @@ import pandas as pd
 from PIL import Image
 
 from cod_ssl.data.camotion_attributes import ATTRIBUTE_CODES
-from cod_ssl.data.camotion_bootstrap import build_camotion_manifest, verify_camotion_flattened_duplicates
+from cod_ssl.data.camotion_bootstrap import (
+    build_camotion_manifest,
+    verify_camotion_flattened_segmentation_duplicates,
+)
 from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
 
@@ -52,6 +55,7 @@ def test_camotion_manifest_preserves_official_test_and_numeric_order(tmp_path):
     )
     assert frame.is_target.all() and set(frame.annotation_type) == {"official_manual"}
     assert frame.attribute_scope.eq("sequence").all()
+    assert "bbox_available" not in frame and "bbox_path" not in frame
     assert report["release_profile"] == "camotion_public_stride5_v1"
     assert report["dense_intermediate_rgb_available"] is False
     assert output.with_suffix(".splits.json").is_file()
@@ -117,17 +121,25 @@ def test_camotion_inspection_emits_attribute_and_split_artifacts(tmp_path):
     assert cooccurrence.equals(cooccurrence.T)
 
 
-def test_camotion_flattened_exports_are_verified_but_never_manifest_assets(tmp_path):
+def test_camotion_only_requires_flattened_rgb_gt_equivalence(tmp_path):
     archive = tmp_path / "CAMotion.zip"
     with zipfile.ZipFile(archive, "w") as handle:
         for partition, canonical, flattened in (
             ("train", "TrainDataset_per_sq", "CAMotion-TR"),
             ("test", "TestDataset_per_sq", "CAMotion-TE"),
         ):
-            for asset in ("Imgs", "GT", "Edge", "Bbox"):
+            for asset in ("Imgs", "GT"):
                 content = f"{partition}-{asset}".encode()
                 handle.writestr(f"CAMotion/CAMotion/{canonical}/seq/{asset}/00000.bin", content)
                 handle.writestr(f"CAMotion/CAMotion/{flattened}/{asset}/seq_00000.bin", content)
-    report = verify_camotion_flattened_duplicates(archive)
-    assert report["flattened_exports_are_duplicates"] is True
+            handle.writestr(
+                f"CAMotion/CAMotion/{canonical}/seq/Bbox/00000.txt", b"canonical-only"
+            )
+            handle.writestr(
+                f"CAMotion/CAMotion/{flattened}/Edge/seq_00000.png", b"flattened-only"
+            )
+    report = verify_camotion_flattened_segmentation_duplicates(archive)
+    assert report["flattened_rgb_gt_are_duplicates"] is True
+    assert report["validated_assets"] == ["Imgs", "GT"]
+    assert report["ignored_assets"] == ["Edge", "Bbox", "BBox"]
     assert report["partitions"]["train"]["Imgs"]["mismatches"] == 0
