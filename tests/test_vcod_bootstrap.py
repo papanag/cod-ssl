@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import shutil
 from pathlib import Path
@@ -9,6 +10,46 @@ from PIL import Image
 from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.preprocessing.prepare_moca_mask_dense import build_moca_mask_dense, verify_moca_mask_dense
 from cod_ssl.data.video_manifest import ManifestVideoCODDataset
+
+
+def _bootstrap_module():
+    path = Path(__file__).parents[1] / "scripts" / "bootstrap_vcod_data.py"
+    spec = importlib.util.spec_from_file_location("bootstrap_vcod_data", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_download_resumes_undersized_archive_at_final_path(tmp_path, monkeypatch):
+    module = _bootstrap_module()
+    destination = tmp_path / "CAMotion.zip"
+    destination.write_bytes(b"partial")
+
+    def resume_download(*, id, output, quiet, resume):
+        partial = Path(output)
+        assert id == "file-id" and resume is True
+        assert partial.read_bytes() == b"partial"
+        partial.write_bytes(b"partial-complete")
+        return output
+
+    monkeypatch.setattr(module.gdown, "download", resume_download)
+    module._download("file-id", destination, expected_bytes=len(b"partial-complete"))
+    assert destination.read_bytes() == b"partial-complete"
+    assert not destination.with_suffix(".zip.part").exists()
+
+
+def test_download_keeps_incomplete_part_for_next_resume(tmp_path, monkeypatch):
+    module = _bootstrap_module()
+    destination = tmp_path / "CAMotion.zip"
+    destination.write_bytes(b"partial")
+    monkeypatch.setattr(
+        module.gdown, "download",
+        lambda **kwargs: kwargs["output"],
+    )
+    with pytest.raises(RuntimeError, match="rerun to resume"):
+        module._download("file-id", destination, expected_bytes=99)
+    assert destination.with_suffix(".zip.part").read_bytes() == b"partial"
 
 
 def _original_sequence(root: Path, sequence_id: str, count: int = 21) -> Path:

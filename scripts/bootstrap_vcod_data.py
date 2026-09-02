@@ -37,6 +37,7 @@ MOCA_RELEASES = {
 OFFICIAL_SOURCE = "https://github.com/XuelianCheng/SLT-Net"
 ORIGINAL_MOCA_SOURCE = "https://www.robots.ox.ac.uk/~vgg/data/MoCA/"
 CAMOTION_FILE_ID = "1YzNdlDhsfgXTZ-Ya1w9wn3SjTXwU2xFs"
+CAMOTION_ARCHIVE_BYTES = 16_912_530_524
 CAMOTION_REPOSITORY = "https://github.com/Garyson1204/CAMotion"
 CAMOTION_METADATA_COMMIT = "bf92692f9f9f2820185f9aa9a06fd2891dadf9a7"
 CAMOTION_ATTRIBUTES_SHA256 = "6ad95102a836ef5a199e6e0a642ee7ddfbf2f6d8065c40742014cfab934abcd9"
@@ -59,12 +60,29 @@ def sha256_with_progress(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def _download(file_id: str, destination: Path) -> None:
-    if destination.is_file():
-        print(f"Using cached archive: {destination}")
-        return
-    destination.parent.mkdir(parents=True, exist_ok=True)
+def _download(
+    file_id: str, destination: Path, *, expected_bytes: int | None = None,
+) -> None:
     temporary = destination.with_suffix(destination.suffix + ".part")
+    if destination.is_file():
+        actual_bytes = destination.stat().st_size
+        if expected_bytes is None or actual_bytes == expected_bytes:
+            print(f"Using cached archive: {destination}")
+            return
+        if actual_bytes > expected_bytes:
+            raise ValueError(
+                f"cached archive is larger than expected and cannot be resumed: {destination} "
+                f"({actual_bytes} bytes; expected {expected_bytes})"
+            )
+        # An interrupted older bootstrap may have left its partial download at the
+        # final path. Move the most complete copy back to gdown's resumable path.
+        if not temporary.is_file() or actual_bytes > temporary.stat().st_size:
+            destination.replace(temporary)
+        print(
+            f"Resuming incomplete archive: {destination} "
+            f"({temporary.stat().st_size}/{expected_bytes} bytes)"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
     result = gdown.download(
         id=file_id,
         output=str(temporary),
@@ -73,6 +91,11 @@ def _download(file_id: str, destination: Path) -> None:
     )
     if result is None or not temporary.is_file():
         raise RuntimeError(f"Google Drive download failed or quota was exceeded: {file_id}")
+    if expected_bytes is not None and temporary.stat().st_size != expected_bytes:
+        raise RuntimeError(
+            f"Google Drive download is incomplete; rerun to resume: {temporary} "
+            f"({temporary.stat().st_size}/{expected_bytes} bytes)"
+        )
     temporary.replace(destination)
 
 
@@ -192,11 +215,7 @@ def _bootstrap_camotion(args, root: Path, manifest_dir: Path) -> dict:
     extracted = root / "camotion"
     metadata = root / "metadata" / f"attributes_per_sequence_{CAMOTION_METADATA_COMMIT}.txt"
     progress = tqdm(total=5, desc="bootstrap CAMotion", unit="stage", dynamic_ncols=True)
-    _download(CAMOTION_FILE_ID, archive)
-    if archive.stat().st_size != 16_912_530_524:
-        raise ValueError(
-            f"CAMotion archive size differs from camotion_public_stride5_v1: {archive.stat().st_size}"
-        )
+    _download(CAMOTION_FILE_ID, archive, expected_bytes=CAMOTION_ARCHIVE_BYTES)
     progress.update(1)
     _download_metadata(CAMOTION_ATTRIBUTES_URL, metadata, CAMOTION_ATTRIBUTES_SHA256)
     progress.update(1)
