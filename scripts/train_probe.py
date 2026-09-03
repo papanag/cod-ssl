@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 
 from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.collate import video_collate
-from cod_ssl.data.video_manifest import ManifestVideoCODDataset
+from cod_ssl.data.video_manifest import ManifestVideoCODDataset, video_balanced_indices
 from cod_ssl.losses import BCEDiceLoss
 from cod_ssl.models import build_video_cod_model
 from cod_ssl.utils.config import load_config
@@ -148,13 +148,28 @@ def main() -> None:
         context_direction=config["clip"].get("context_direction", "bidirectional"),
         filter_regime=config["dataset"]["name"] not in {"moca_mask_dense", "camotion"},
     )
+    training_subset_receipt = None
     if args.smoke:
         dataset = Subset(dataset, range(min(4, len(dataset))))
     elif training_limit := config["training"].get("limit_targets"):
         training_limit = int(training_limit)
         if training_limit < 1:
             raise ValueError("training.limit_targets must be positive")
-        dataset = Subset(dataset, range(min(training_limit, len(dataset))))
+        subset_seed = int(config["training"].get("subset_seed", config["experiment"]["seed"]))
+        target_video_ids = dataset.target_video_ids
+        selected_indices = video_balanced_indices(
+            target_video_ids, training_limit, seed=subset_seed
+        )
+        selected_video_ids = [target_video_ids[index] for index in selected_indices]
+        training_subset_receipt = {
+            "sampling": "deterministic_video_balanced",
+            "seed": subset_seed,
+            "limit": training_limit,
+            "selected_indices": selected_indices,
+            "selected_targets": len(selected_indices),
+            "selected_source_videos": len(set(selected_video_ids)),
+        }
+        dataset = Subset(dataset, selected_indices)
     training = config["training"]
     loader = DataLoader(dataset, batch_size=int(training["batch_size"]), shuffle=True,
                         num_workers=(0 if args.smoke else int(training["num_workers"])),
@@ -172,6 +187,11 @@ def main() -> None:
     (run_dir / "split_ids.json").write_text(json.dumps({"ids": splits, "manifest_sha256": file_sha256(manifest_value)}, indent=2) + "\n")
     (run_dir / "environment.json").write_text(json.dumps({"torch": torch.__version__, "device": str(device),
         "git_commit": git_commit(Path.cwd()), "seed": config["experiment"]["seed"]}, indent=2) + "\n")
+    if training_subset_receipt is not None:
+        training_subset_receipt["manifest_sha256"] = file_sha256(manifest_value)
+        (run_dir / "training_subset.json").write_text(
+            json.dumps(training_subset_receipt, indent=2) + "\n"
+        )
     loss_fn = BCEDiceLoss(); max_steps = 1 if args.smoke else int(training["max_steps"])
     global_step, gradient_checked = 0, False
     log_path = run_dir / "train_log.jsonl"

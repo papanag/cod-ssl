@@ -20,7 +20,7 @@ from cod_ssl.data import CODDataset
 from cod_ssl.data.camotion_attributes import ATTRIBUTE_CODES
 from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.collate import video_collate
-from cod_ssl.data.video_manifest import ManifestVideoCODDataset
+from cod_ssl.data.video_manifest import ManifestVideoCODDataset, video_balanced_indices
 from cod_ssl.engine import Evaluator
 from cod_ssl.engine.train import select_amp
 from cod_ssl.evaluation.video_predictions import logits_to_float_views
@@ -99,11 +99,27 @@ def evaluate_video_run(
         context_direction=clip.get("context_direction", "bidirectional"),
         filter_regime=config["dataset"]["name"] not in {"moca_mask_dense", "camotion"},
     )
+    evaluation_subset_receipt = None
     if evaluation_limit := config["evaluation"].get("limit_targets"):
         evaluation_limit = int(evaluation_limit)
         if evaluation_limit < 1:
             raise ValueError("evaluation.limit_targets must be positive")
-        dataset = Subset(dataset, range(min(evaluation_limit, len(dataset))))
+        subset_seed = int(config["evaluation"].get("subset_seed", config["experiment"]["seed"]))
+        target_video_ids = dataset.target_video_ids
+        selected_indices = video_balanced_indices(
+            target_video_ids, evaluation_limit, seed=subset_seed
+        )
+        selected_video_ids = [target_video_ids[index] for index in selected_indices]
+        evaluation_subset_receipt = {
+            "sampling": "deterministic_video_balanced",
+            "seed": subset_seed,
+            "limit": evaluation_limit,
+            "selected_indices": selected_indices,
+            "selected_targets": len(selected_indices),
+            "selected_source_videos": len(set(selected_video_ids)),
+            "manifest_sha256": file_sha256(manifest),
+        }
+        dataset = Subset(dataset, selected_indices)
     loader = DataLoader(
         dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=video_collate
     )
@@ -127,6 +143,10 @@ def evaluate_video_run(
     model.assert_gradient_contract()
     prediction_dir = artifact_dir / "predictions"
     prediction_dir.mkdir(parents=True, exist_ok=True)
+    if evaluation_subset_receipt is not None:
+        (artifact_dir / "evaluation_subset.json").write_text(
+            json.dumps(evaluation_subset_receipt, indent=2) + "\n"
+        )
     progress_path = artifact_dir / "evaluation_progress.json"
     evaluation_started = time.perf_counter()
     rows, keys = [], set()
@@ -310,6 +330,9 @@ def evaluate_video_run(
         "exploratory_limits": {
             "training_targets": config["training"].get("limit_targets"),
             "evaluation_targets": config["evaluation"].get("limit_targets"),
+            "sampling": "deterministic_video_balanced",
+            "training_subset_seed": config["training"].get("subset_seed"),
+            "evaluation_subset_seed": config["evaluation"].get("subset_seed"),
         },
         "timing": {"mode": "cold", "ms_per_output_frame": float(frame.inference_ms.mean()),
                    "peak_gpu_memory_mb": (torch.cuda.max_memory_allocated(device) / 2**20 if device.type == "cuda" else 0)},

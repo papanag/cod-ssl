@@ -8,7 +8,27 @@ from cod_ssl.data.clip_sampler import ClipSpec
 from cod_ssl.data.video_manifest import (
     ManifestVideoCODDataset,
     assert_disjoint_video_splits,
+    video_balanced_indices,
 )
+
+
+def test_video_balanced_indices_are_deterministic_and_round_robin():
+    video_ids = ("a", "a", "a", "a", "b", "b", "c")
+    first = video_balanced_indices(video_ids, 6, seed=42)
+    second = video_balanced_indices(video_ids, 6, seed=42)
+
+    assert first == second
+    assert len(first) == len(set(first)) == 6
+    assert {video_ids[index] for index in first[:3]} == {"a", "b", "c"}
+    assert [video_ids[index] for index in first].count("a") == 3
+    assert [video_ids[index] for index in first].count("b") == 2
+    assert [video_ids[index] for index in first].count("c") == 1
+
+
+def test_video_balanced_indices_validate_and_cap_limit():
+    assert sorted(video_balanced_indices(("a", "b"), 10, seed=1)) == [0, 1]
+    with pytest.raises(ValueError, match="positive"):
+        video_balanced_indices(("a",), 0, seed=1)
 
 
 def _manifest(tmp_path):

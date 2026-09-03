@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import random
+from collections import defaultdict
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,38 @@ REQUIRED_COLUMNS = {
     "dataset", "split", "video_id", "source_video_id", "frame_id", "frame_number",
     "image_path", "mask_path", "annotation_type",
 }
+
+
+def video_balanced_indices(
+    target_video_ids: list[str] | tuple[str, ...], limit: int, *, seed: int
+) -> list[int]:
+    """Select targets round-robin across videos with deterministic seeded ordering."""
+    if limit < 1:
+        raise ValueError("video-balanced subset limit must be positive")
+    groups: dict[str, list[int]] = defaultdict(list)
+    for index, video_id in enumerate(target_video_ids):
+        groups[str(video_id)].append(index)
+    rng = random.Random(seed)
+    video_order = sorted(groups)
+    rng.shuffle(video_order)
+    for indices in groups.values():
+        rng.shuffle(indices)
+    selected: list[int] = []
+    depth = 0
+    target_count = min(limit, len(target_video_ids))
+    while len(selected) < target_count:
+        added = False
+        for video_id in video_order:
+            indices = groups[video_id]
+            if depth < len(indices):
+                selected.append(indices[depth])
+                added = True
+                if len(selected) == target_count:
+                    break
+        if not added:
+            break
+        depth += 1
+    return selected
 
 
 def _optional(row: pd.Series, name: str, default: Any = None) -> Any:
@@ -98,6 +131,13 @@ class ManifestVideoCODDataset(VideoCODDataset):
     @property
     def video_ids(self) -> tuple[str, ...]:
         return tuple(self._groups)
+
+    @property
+    def target_video_ids(self) -> tuple[str, ...]:
+        return tuple(
+            str(self._groups[video_id].iloc[target_position]["source_video_id"])
+            for video_id, target_position in self._lookup
+        )
 
     def frames_for_video(self, video_id: str) -> tuple[int, ...]:
         group = self._groups[video_id]
