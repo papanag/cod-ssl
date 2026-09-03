@@ -31,6 +31,16 @@ from cod_ssl.utils.reproducibility import seed_everything
 from cod_ssl.utils.run import file_sha256
 
 
+def _evaluation_clip_summary(clip: dict, system: str) -> dict:
+    n_observations = 1 if system in {"DS", "VI"} else int(clip["length"])
+    source_stride = int(clip.get("source_frame_stride", 1))
+    return dict(clip) | {
+        "target_index": 0 if n_observations == 1 else int(clip["target_index"]),
+        "source_frame_span": (n_observations - 1) * source_stride,
+        "n_observations": n_observations,
+    }
+
+
 def evaluate_video_run(
     run_dir: Path,
     checkpoint_arg: str | None,
@@ -267,11 +277,7 @@ def evaluate_video_run(
         "derived_dense_context_frames": derived_context_frames,
         "original_moca_rgb_frames": original_moca_rgb_frames,
     }
-    n_observations = 1 if system in {"DS", "VI"} else int(clip["length"])
-    clip_summary = dict(clip) | {
-        "source_frame_span": (n_observations - 1) * source_stride,
-        "n_observations": n_observations,
-    }
+    clip_summary = _evaluation_clip_summary(clip, system)
     summary = {
         "schema_version": 3,
         "run": {"run_id": run_dir.name, "system_id": config["experiment"]["system_id"],
