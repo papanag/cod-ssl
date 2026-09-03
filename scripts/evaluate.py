@@ -13,7 +13,7 @@ import pandas as pd
 import torch
 import yaml
 from PIL import Image
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm.auto import tqdm
 
 from cod_ssl.data import CODDataset
@@ -32,8 +32,14 @@ from cod_ssl.utils.run import file_sha256
 
 
 def evaluate_video_run(
-    run_dir: Path, checkpoint_arg: str | None, split: str, save_logits: bool
+    run_dir: Path,
+    checkpoint_arg: str | None,
+    split: str,
+    save_logits: bool,
+    output_dir: Path | None = None,
 ) -> None:
+    artifact_dir = output_dir or run_dir
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     config = yaml.safe_load((run_dir / "config_resolved.yaml").read_text())
     seed_everything(int(config["experiment"]["seed"]))
     manifest = os.environ.get(
@@ -83,6 +89,11 @@ def evaluate_video_run(
         context_direction=clip.get("context_direction", "bidirectional"),
         filter_regime=config["dataset"]["name"] not in {"moca_mask_dense", "camotion"},
     )
+    if evaluation_limit := config["evaluation"].get("limit_targets"):
+        evaluation_limit = int(evaluation_limit)
+        if evaluation_limit < 1:
+            raise ValueError("evaluation.limit_targets must be positive")
+        dataset = Subset(dataset, range(min(evaluation_limit, len(dataset))))
     loader = DataLoader(
         dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=video_collate
     )
@@ -104,9 +115,9 @@ def evaluate_video_run(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device).eval()
     model.assert_gradient_contract()
-    prediction_dir = run_dir / "predictions"
+    prediction_dir = artifact_dir / "predictions"
     prediction_dir.mkdir(parents=True, exist_ok=True)
-    progress_path = run_dir / "evaluation_progress.json"
+    progress_path = artifact_dir / "evaluation_progress.json"
     evaluation_started = time.perf_counter()
     rows, keys = [], set()
     progress = tqdm(
@@ -219,9 +230,9 @@ def evaluate_video_run(
             refresh=False,
         )
     frame = pd.DataFrame(rows)
-    frame.to_csv(run_dir / "per_frame.csv", index=False)
+    frame.to_csv(artifact_dir / "per_frame.csv", index=False)
     videos = per_video_table(frame)
-    videos.to_csv(run_dir / "per_video.csv", index=False)
+    videos.to_csv(artifact_dir / "per_video.csv", index=False)
     aggregates = aggregate_frame_and_video(frame)
     attribute_results = {}
     for code in ATTRIBUTE_CODES:
@@ -265,7 +276,9 @@ def evaluate_video_run(
         "schema_version": 3,
         "run": {"run_id": run_dir.name, "system_id": config["experiment"]["system_id"],
                 "dataset": config["dataset"]["name"], "regime": config["dataset"]["regime"],
-                "seed": config["experiment"]["seed"]},
+                "seed": config["experiment"]["seed"],
+                "training_step": int(state.get("global_step", 0)),
+                "exploratory": bool(config["experiment"].get("exploratory", False))},
         "representation": {"backbone": config["backbone"]["name"],
                            "pathway": config["pathway"], "feature_layer": config["backbone"]["feature_layer"],
                            "temporal_adapter": config["temporal_adapter"]["name"],
@@ -288,15 +301,19 @@ def evaluate_video_run(
         }, "sigmoid_raw_diagnostics": {
             "mean_probability": float(frame.raw_mean_probability.mean())}},
         "prediction_view": "minmax",
+        "exploratory_limits": {
+            "training_targets": config["training"].get("limit_targets"),
+            "evaluation_targets": config["evaluation"].get("limit_targets"),
+        },
         "timing": {"mode": "cold", "ms_per_output_frame": float(frame.inference_ms.mean()),
                    "peak_gpu_memory_mb": (torch.cuda.max_memory_allocated(device) / 2**20 if device.type == "cuda" else 0)},
     }
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (artifact_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     final_progress = json.loads(progress_path.read_text())
     final_progress["status"] = "complete"
     final_progress["eta_seconds"] = 0.0
     progress_path.write_text(json.dumps(final_progress, indent=2) + "\n")
-    (run_dir / "EVALUATION_COMPLETE").write_text("complete\n")
+    (artifact_dir / "EVALUATION_COMPLETE").write_text("complete\n")
 
 
 def main() -> None:
@@ -304,13 +321,17 @@ def main() -> None:
     parser.add_argument("--run")
     parser.add_argument("--run-dir")
     parser.add_argument("--checkpoint")
+    parser.add_argument("--output-dir")
     parser.add_argument("--dataset", choices=["camo_test", "cod10k_test", "chameleon", "nc4k"])
     parser.add_argument("--split", default="test")
     parser.add_argument("--save-logits", action="store_true")
     args = parser.parse_args()
 
     if args.run_dir:
-        evaluate_video_run(Path(args.run_dir), args.checkpoint, args.split, args.save_logits)
+        evaluate_video_run(
+            Path(args.run_dir), args.checkpoint, args.split, args.save_logits,
+            Path(args.output_dir) if args.output_dir else None,
+        )
         return
     if not args.run:
         parser.error("one of --run or --run-dir is required")

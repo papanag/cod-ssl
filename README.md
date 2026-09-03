@@ -91,6 +91,14 @@ Keep canonical manifests under `MyDrive/cod-ssl/vcod/manifests`, and never copy
 smoke or tuning outputs into the final `vcod/runs` directory. The VCOD trainer
 writes readout-only atomic checkpoints every 250 optimizer steps so a Colab
 disconnect loses bounded work and cannot leave a partially written checkpoint.
+Notebook 06 tunes with successive halving at 250, 1,000, and 3,000 optimizer
+steps. All three rates run at stage one, the best two per dataset/system advance,
+and only the best advances to stage three. Stage validation artifacts and immutable
+promotion receipts are retained under `vcod/tuning`; final runs always start clean.
+Its separate `exploratory` queue runs MoCA-D1 for DS/VI/DT/VV with 15 optimizer
+steps, a fixed first-128-target training subset, and a fixed first-64-target
+validation subset. These quick-look artifacts stay under `vcod/exploratory`, are
+marked non-primary, and are never eligible for tuning promotion or final reports.
 
 Preview the exact eight-cell-per-seed matrix without starting compute:
 

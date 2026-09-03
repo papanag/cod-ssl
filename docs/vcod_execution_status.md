@@ -32,7 +32,9 @@ These are not implementation defects and cannot be completed from the repository
 3. Supply the approved DINOv3 and V-JEPA2.1 ViT-B/16 checkpoints and official repository clones; record their SHA-256 hashes and commits.
 4. Run the V-JEPA image/video inspection on the exact checkpoint and manually sign target-tubelet and spatial-orientation semantics.
 5. Install `mamba-ssm` in the CUDA environment and run DT mixed-precision smoke training.
-6. Perform equal-scope learning-rate selection on training/validation videos, freeze the resulting protocol, then run official tests.
+6. Complete the declared 250/1,000/3,000-step successive-halving learning-rate
+   selection on training/validation videos, review its immutable promotion receipts,
+   freeze the resulting protocol, then run clean official test seeds.
 7. Complete all eight primary cells and the two additional MoCA S5 temporal cells per
    seed. Only afterward run DM/VR, shuffled diagnostics, efficiency modes, and qualitative review.
 

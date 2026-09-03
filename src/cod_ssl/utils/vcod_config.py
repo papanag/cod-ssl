@@ -16,7 +16,7 @@ SCIENTIFIC_PATHS = (
     ("clip", "length"), ("clip", "stride"), ("clip", "target_index"),
     ("backbone", "feature_layer"), ("backbone", "input_size"),
     ("training", "learning_rate"), ("training", "max_steps"),
-    ("training", "early_stopping_patience"),
+    ("training", "gradient_accumulation"),
 )
 
 

@@ -48,9 +48,9 @@ training:
   gradient_accumulation: 4
   max_steps: 10000
   checkpoint_every_steps: 250
-  validation_every_steps: 500
-  early_stopping_metric: val_video_weighted_S
-  early_stopping_patience: 10
+  tuning_stages: [250, 1000, 3000]
+  tuning_promote_counts: [2, 1, 1]
+  tuning_selection_metric: val_video_weighted_S
   num_workers: 4
 evaluation:
   cod_prediction_view: minmax

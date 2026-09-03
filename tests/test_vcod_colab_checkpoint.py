@@ -26,14 +26,35 @@ def test_atomic_checkpoint_contains_only_readout_and_resume_identity(tmp_path):
     model = TinyModel()
     optimizer = torch.optim.AdamW(model.readout.parameters())
     target = tmp_path / "last.pt"
-    module._save_checkpoint(target, model, optimizer, 250, "config-hash")
+    module._save_checkpoint(
+        target, model, optimizer, 250, "config-hash", "resume-compatible-hash"
+    )
     assert target.is_file()
     assert not target.with_suffix(".pt.part").exists()
     state = torch.load(target, map_location="cpu", weights_only=False)
     assert state["global_step"] == 250
     assert state["config_sha256"] == "config-hash"
+    assert state["resume_compatibility_sha256"] == "resume-compatible-hash"
     assert state["readout"]
     assert all(not key.startswith("backbone.") for key in state["readout"])
+
+
+def test_resume_identity_allows_only_step_target_to_change():
+    module = _module()
+    base = {
+        "experiment": {"seed": 42},
+        "training": {"learning_rate": 3e-4, "max_steps": 250},
+    }
+    extended = {
+        "experiment": {"seed": 42},
+        "training": {"learning_rate": 3e-4, "max_steps": 1000},
+    }
+    changed_lr = {
+        "experiment": {"seed": 42},
+        "training": {"learning_rate": 1e-4, "max_steps": 1000},
+    }
+    assert module._resume_compatibility_sha256(base) == module._resume_compatibility_sha256(extended)
+    assert module._resume_compatibility_sha256(base) != module._resume_compatibility_sha256(changed_lr)
 
 
 def test_per_run_entrypoints_do_not_rehash_approved_moca_assets():

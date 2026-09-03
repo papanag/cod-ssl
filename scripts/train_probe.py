@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import hashlib
 import json
 import os
@@ -54,12 +55,20 @@ def _config_sha256(config: dict) -> str:
     return hashlib.sha256(yaml.safe_dump(config, sort_keys=True).encode()).hexdigest()
 
 
+def _resume_compatibility_sha256(config: dict) -> str:
+    """Hash state-affecting configuration while allowing a larger step target."""
+    compatible = deepcopy(config)
+    compatible["training"].pop("max_steps", None)
+    return _config_sha256(compatible)
+
+
 def _save_checkpoint(
     target: Path,
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     global_step: int,
     config_sha256: str,
+    resume_compatibility_sha256: str,
 ) -> None:
     readout = {
         key: value
@@ -71,6 +80,7 @@ def _save_checkpoint(
         "optimizer": optimizer.state_dict(),
         "global_step": global_step,
         "config_sha256": config_sha256,
+        "resume_compatibility_sha256": resume_compatibility_sha256,
         "torch_random_state": torch.get_rng_state(),
         "cuda_random_states": torch.cuda.get_rng_state_all()
         if torch.cuda.is_available()
@@ -92,11 +102,16 @@ def main() -> None:
     system = config["experiment"]["system_id"]
     config = configure_system(config, system); validate_vcod_config(config)
     config_sha256 = _config_sha256(config)
+    resume_compatibility_sha256 = _resume_compatibility_sha256(config)
     resume_state = None
     if args.resume:
         resume_state = torch.load(args.resume, map_location="cpu", weights_only=False)
-        if resume_state.get("config_sha256") != config_sha256:
-            raise ValueError("resume checkpoint resolved-config hash does not match this run")
+        checkpoint_compatibility = resume_state.get("resume_compatibility_sha256")
+        if checkpoint_compatibility != resume_compatibility_sha256:
+            raise ValueError(
+                "resume checkpoint is incompatible with this run; only training.max_steps "
+                "may change between tuning stages"
+            )
     seed_everything(int(config["experiment"]["seed"]))
     manifest_value = os.environ.get(config["dataset"]["manifest_env"], config["dataset"].get("split_manifest", ""))
     if not manifest_value or not Path(manifest_value).is_file():
@@ -133,7 +148,13 @@ def main() -> None:
         context_direction=config["clip"].get("context_direction", "bidirectional"),
         filter_regime=config["dataset"]["name"] not in {"moca_mask_dense", "camotion"},
     )
-    if args.smoke: dataset = Subset(dataset, range(min(4, len(dataset))))
+    if args.smoke:
+        dataset = Subset(dataset, range(min(4, len(dataset))))
+    elif training_limit := config["training"].get("limit_targets"):
+        training_limit = int(training_limit)
+        if training_limit < 1:
+            raise ValueError("training.limit_targets must be positive")
+        dataset = Subset(dataset, range(min(training_limit, len(dataset))))
     training = config["training"]
     loader = DataLoader(dataset, batch_size=int(training["batch_size"]), shuffle=True,
                         num_workers=(0 if args.smoke else int(training["num_workers"])),
@@ -166,9 +187,19 @@ def main() -> None:
     checkpoint_every = int(training.get("checkpoint_every_steps", 250))
     if checkpoint_every < 1:
         raise ValueError("training.checkpoint_every_steps must be positive")
+    if resume_state is not None and global_step > max_steps:
+        raise ValueError(
+            f"checkpoint step {global_step} exceeds requested target step {max_steps}"
+        )
+    gradient_accumulation = int(training.get("gradient_accumulation", 1))
+    if gradient_accumulation < 1:
+        raise ValueError("training.gradient_accumulation must be positive")
     started = time.perf_counter()
     session_start_step = global_step
     running_loss = 0.0
+    micro_step = 0
+    accumulated_loss = 0.0
+    optimizer.zero_grad(set_to_none=True)
     progress = tqdm(
         total=max_steps,
         initial=global_step,
@@ -180,15 +211,21 @@ def main() -> None:
         while global_step < max_steps:
             for batch in loader:
                 for key in ("frames", "target_mask", "valid_temporal_mask"): batch[key] = batch[key].to(device)
-                optimizer.zero_grad(set_to_none=True)
                 with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
                     output = model(batch); loss = loss_fn(output["logits"], batch["target_mask"])
                 if not torch.isfinite(loss): raise FloatingPointError("non-finite VCOD training loss")
-                loss.backward()
+                (loss / gradient_accumulation).backward()
                 if not gradient_checked:
                     model.assert_gradient_contract(after_backward=True); gradient_checked = True
-                optimizer.step(); global_step += 1
-                loss_value = float(loss.detach())
+                micro_step += 1
+                accumulated_loss += float(loss.detach())
+                if micro_step % gradient_accumulation:
+                    continue
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                global_step += 1
+                loss_value = accumulated_loss / gradient_accumulation
+                accumulated_loss = 0.0
                 running_loss += loss_value
                 elapsed = time.perf_counter() - started
                 completed_this_session = max(1, global_step - session_start_step)
@@ -224,6 +261,7 @@ def main() -> None:
                         optimizer,
                         global_step,
                         config_sha256,
+                        resume_compatibility_sha256,
                     )
                     progress.write(f"Checkpoint saved at optimizer step {global_step}")
                     if hasattr(os, "sync"):
@@ -233,10 +271,17 @@ def main() -> None:
         progress.close()
     checkpoint = run_dir / "checkpoints" / "last.pt"
     _save_checkpoint(
-        checkpoint, model, optimizer, global_step, config_sha256
+        checkpoint, model, optimizer, global_step, config_sha256,
+        resume_compatibility_sha256,
     )
     (run_dir / "checkpoints.json").write_text(json.dumps({"last": str(checkpoint), "global_step": global_step}, indent=2) + "\n")
-    (run_dir / "TRAINING_COMPLETE").write_text("complete\n")
+    stage_dir = run_dir / "stages" / f"step_{max_steps:06d}"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    (stage_dir / "TRAINING_COMPLETE").write_text("complete\n")
+    (run_dir / "TRAINING_COMPLETE").write_text(
+        json.dumps({"status": "complete", "global_step": global_step,
+                    "target_step": max_steps}, indent=2) + "\n"
+    )
     print(run_dir)
 
 
